@@ -1,0 +1,8 @@
+langchain
+qdrant-client
+unstructured
+openai
+PyMuPDF
+python-docx
+python-pptx
+tqdm
