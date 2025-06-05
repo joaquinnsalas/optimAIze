@@ -1,0 +1,8 @@
+34: MOVZ X9, #0x1234, LSL #48
+38: ADD X9, X9, #0x5678
+3c: ADD X9, X9, #0xabc0000
+40: ADD X9, X9, 0xdef00000000
+//Store value
+44: ADDI X1, XZR, #0x28
+48: STUR X9, [X1]
+4c: LDUR X10, [X1]
