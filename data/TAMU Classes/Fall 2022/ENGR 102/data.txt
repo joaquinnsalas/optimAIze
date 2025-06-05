@@ -1,0 +1,7 @@
+# Created on November 15, 2022  
+# Time,Temperature,Windspeed  
+# (min),(deg F),(knots)  
+0,33.47,1.27  
+5,32.59,1.95  
+10,33.62,0.76  
+15,33.79,1.12 

@@ -1,0 +1,3 @@
+lw 1
+lw 0
+program-check 1

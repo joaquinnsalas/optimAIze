@@ -1,0 +1,19 @@
+function poles = MatlabHW3(num, den)
+%   Arguments:
+%       num - Numerator of the open-loop transfer function
+%       den - Denominator of the open-loop transfer function
+%   Returns:
+%       poles - Poles of the closed-loop system
+
+    % Create a transfer function object
+    G = tf(num, den);
+    
+    % finding the closedloop transfer function
+    T = feedback(G, 1);
+    
+    % finding the poles of the closed-loop system
+    poles = pole(T);
+
+    disp('The poles of the closed-loop system:');
+    disp(poles);
+end
