@@ -158,10 +158,10 @@ class ElasticsearchManager:
             return False
     
     def search_keywords(self, query: str, limit: int = 10, 
-                       filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Search for chunks using keyword search."""
+                    filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """Search for documents using keyword matching."""
         try:
-            # Build search query
+            # Build the search query
             search_body = {
                 "query": {
                     "bool": {
@@ -169,7 +169,7 @@ class ElasticsearchManager:
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["content^2", "content_preview"],
+                                    "fields": ["content^2", "source", "type"],
                                     "type": "best_fields",
                                     "fuzziness": "AUTO"
                                 }
@@ -177,7 +177,6 @@ class ElasticsearchManager:
                         ]
                     }
                 },
-                "size": limit,
                 "highlight": {
                     "fields": {
                         "content": {
@@ -185,48 +184,55 @@ class ElasticsearchManager:
                             "number_of_fragments": 3
                         }
                     }
-                }
+                },
+                "size": limit
             }
             
             # Add filters if provided
             if filters:
                 filter_clauses = []
-                for field, value in filters.items():
-                    filter_clauses.append({"term": {field: value}})
+                for key, value in filters.items():
+                    filter_clauses.append({"term": {key: value}})
                 
                 if filter_clauses:
                     search_body["query"]["bool"]["filter"] = filter_clauses
             
-            # Perform search
+            # Execute search
             response = self.client.search(
                 index=self.index_name,
                 body=search_body
             )
             
-            # Format results
+            # Convert results to standard format
             results = []
             for hit in response["hits"]["hits"]:
+                source = hit["_source"]
+                highlights = []
+                
+                # Extract highlights
+                if "highlight" in hit and "content" in hit["highlight"]:
+                    highlights = hit["highlight"]["content"]
+                
                 result = {
                     "chunk_id": hit["_id"],
                     "score": hit["_score"],
-                    "content": hit["_source"]["content"],
+                    "content": source.get("content", ""),
+                    "highlights": highlights,
                     "metadata": {
-                        k: v for k, v in hit["_source"].items() 
-                        if k not in ["content", "chunk_id"]
+                        "source": source.get("source", ""),
+                        "chunk_index": source.get("chunk_index", 0),
+                        "page_number": source.get("page_number"),
+                        "type": source.get("type"),
+                        "total_chunks": source.get("total_chunks")
                     }
                 }
-                
-                # Add highlights if available
-                if "highlight" in hit:
-                    result["highlights"] = hit["highlight"].get("content", [])
-                
                 results.append(result)
             
-            logger.info(f"Found {len(results)} keyword matches for query: {query}")
+            logger.debug(f"Found {len(results)} keyword matches")
             return results
         
         except Exception as e:
-            logger.error(f"Error searching Elasticsearch: {e}")
+            logger.error(f"Error in keyword search: {e}")
             return []
     
     def search_by_source(self, source_path: str, limit: int = 100) -> List[Dict[str, Any]]:

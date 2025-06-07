@@ -235,6 +235,57 @@ class QdrantManager:
         except Exception as e:
             logger.error(f"Error deleting chunks from source {source_path}: {e}")
             return False
+        
+    def search_similar(self, query_embedding: List[float], limit: int = 10, 
+                    score_threshold: float = 0.0, filter_conditions: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """Search for similar vectors in the collection."""
+        try:
+            # Build filter conditions for Qdrant
+            filter_query = None
+            if filter_conditions:
+                filter_query = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value)
+                        ) for key, value in filter_conditions.items()
+                    ]
+                )
+            
+            # Perform the search
+            search_result = self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=limit,
+                score_threshold=score_threshold,
+                query_filter=filter_query,
+                with_payload=True,
+                with_vectors=False
+            )
+            
+            # Convert results to standard format
+            results = []
+            for point in search_result:
+                result = {
+                    "chunk_id": str(point.id),
+                    "score": point.score,
+                    "content": point.payload.get("content", ""),
+                    "metadata": {
+                        "source": point.payload.get("source", ""),
+                        "chunk_index": point.payload.get("chunk_index", 0),
+                        "page_number": point.payload.get("page_number"),
+                        "type": point.payload.get("type"),
+                        "total_chunks": point.payload.get("total_chunks")
+                    }
+                }
+                results.append(result)
+            
+            logger.debug(f"Found {len(results)} similar vectors")
+            return results
+        
+        except Exception as e:
+            logger.error(f"Error searching similar vectors: {e}")
+            return []
     
     def get_collection_info(self) -> Dict[str, Any]:
         """Get information about the collection."""
