@@ -1,285 +1,318 @@
-# OptimAIze - Production-Grade RAG System
-
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+# OptimAIze Document Indexer & RAG System
 
 A production-ready Retrieval-Augmented Generation (RAG) system featuring hybrid search, multi-modal document processing, and enterprise-grade reliability.
 
-## 🚀 Features
+## ✨ Features
 
-### **Core Capabilities**
-- **Hybrid Search**: Combines semantic (vector) and keyword search with advanced fusion algorithms
-- **Multi-Modal Document Processing**: PDF, DOCX, PPTX, Excel, images with OCR
-- **Production-Ready**: Comprehensive logging, monitoring, error handling, and health checks
-- **Scalable Architecture**: Async processing, concurrent search, and modular design
-- **Enterprise Security**: Input validation, secure configurations, and audit trails
+**🔍 Hybrid Search Engine** - Combines semantic vector search with keyword search using Reciprocal Rank Fusion (RRF)
 
-### **Search Technologies**
-- **Semantic Search**: Qdrant vector database with Nomic embeddings
-- **Keyword Search**: Elasticsearch with advanced text analysis
-- **Result Fusion**: Reciprocal Rank Fusion (RRF) for optimal relevance
-- **Query Processing**: Intelligent query expansion and preprocessing
+**📄 Multi-Modal Processing** - Supports PDF, Word, PowerPoint, Excel, text, and Markdown with OCR integration
 
-### **Developer Experience**
-- **CLI Interface**: Complete command-line tools for indexing and search
-- **REST API**: FastAPI-based endpoints with OpenAPI documentation
-- **Type Safety**: Full type hints and Pydantic models
-- **Comprehensive Testing**: Unit tests and integration test suite
+**🤖 Local LLM Integration** - Ollama-powered question answering with context-aware responses and source citations
 
-## 📋 Quick Start
+**⚡ Production-Ready** - Docker containerization, health monitoring, and enterprise-grade reliability
 
-### **Prerequisites**
+**🔧 Developer Experience** - CLI interface, comprehensive logging, and YAML configuration management
+
+## 🚀 Quick Start with Docker (Recommended)
+
+### Prerequisites
+- Docker and Docker Compose installed
+- At least 4GB of available RAM
+- 10GB of free disk space
+
+### 1. Clone and Start Services
+
 ```bash
-# Python 3.11+
-python --version
+# Clone the repository
+git clone <repository-url>
+cd optimaize-indexer
 
-# Start required services
-docker-compose up -d  # Qdrant + Elasticsearch
+# Start all services
+docker-compose up -d
+
+# Check service status
+docker-compose ps
 ```
 
-### **Installation**
+### 2. Install Ollama Model
+
+```bash
+# Install the default LLM model (llama3)
+docker-compose exec ollama ollama pull llama3
+
+# Verify model installation
+docker-compose exec ollama ollama list
+```
+
+### 3. Add Documents and Index
+
+```bash
+# Copy your documents to the data/input directory
+mkdir -p data/input
+cp /path/to/your/documents/* data/input/
+
+# Index the documents
+docker-compose exec optimaize python main.py index
+
+# Check indexing status
+docker-compose exec optimaize python main.py status
+```
+
+### 4. Ask Questions
+
+```bash
+# Ask questions about your documents
+docker-compose exec optimaize python main.py ask "What are the main policies?"
+
+# Search without LLM
+docker-compose exec optimaize python main.py search "policy document"
+```
+
+## 🛠️ Manual Installation (Alternative)
+
+### Prerequisites
+- Python 3.11+
+- Git
+
+### 1. Setup Python Environment
+
 ```bash
 # Clone repository
-git clone https://github.com/your-org/optimAIze-indexer.git
-cd optimAIze-indexer
+git clone <repository-url>
+cd optimaize-indexer
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### **Basic Usage**
+### 2. Install External Services
 
-#### **1. Index Documents**
+#### Qdrant (Vector Database)
 ```bash
-# Index all documents in data/input/
+# Using Docker
+docker run -p 6333:6333 -p 6334:6334 \
+    -v $(pwd)/qdrant_storage:/qdrant/storage:z \
+    qdrant/qdrant:v1.7.4
+
+# Or install locally: https://qdrant.tech/documentation/guides/installation/
+```
+
+#### Elasticsearch (Keyword Search)
+```bash
+# Using Docker
+docker run -d \
+  --name elasticsearch \
+  -p 9200:9200 -p 9300:9300 \
+  -e "discovery.type=single-node" \
+  -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
+  -e "xpack.security.enabled=false" \
+  docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+
+# Or install locally: https://www.elastic.co/downloads/elasticsearch
+```
+
+#### Ollama (LLM)
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start Ollama service
+ollama serve
+
+# Install model
+ollama pull llama3
+```
+
+### 3. Configure and Run
+
+```bash
+# Copy and edit configuration
+cp config/config.yaml.example config/config.yaml
+
+# Index documents
+mkdir -p data/input
+cp /path/to/documents/* data/input/
 python main.py index
 
-# Force reprocess all files
-python main.py index --force
-
-# Custom input directory
-python main.py index --input-dir /path/to/docs
+# Ask questions
+python main.py ask "What are the company policies?"
 ```
 
-#### **2. Search Documents**
+### Component Details
+
+**Document Processing Pipeline**
+- Handles 6+ document formats with specialized parsers
+- Intelligent chunking preserves context across boundaries
+- OCR integration for image-based content extraction
+- Parallel processing for high-throughput indexing
+
+**Hybrid Search Engine**
+- Semantic search via vector embeddings (768-dimensional)
+- Keyword search via Elasticsearch with BM25 scoring
+- RRF algorithm combines results for optimal relevance
+- Configurable weights and thresholds for fine-tuning
+
+**LLM Integration**
+- Local inference via Ollama (no external API calls)
+- Template-based prompt engineering
+- Context-aware answer generation
+- Automatic source citation and attribution
+
+## 🔧 Configuration
+
+### Environment Variables
+
 ```bash
-# Hybrid search (default)
-python main.py query "employee benefits" --top-k 5
+# Database URLs
+export QDRANT_URL="http://localhost:6333"
+export ELASTICSEARCH_URL="http://localhost:9200"
+export OLLAMA_URL="http://localhost:11434"
 
-# Semantic search only
-python main.py query "safety procedures" --mode semantic
-
-# Keyword search only  
-python main.py query "paid time off" --mode keyword
-
-# Advanced filtering
-python main.py query "training" --min-similarity 0.7 --top-k 10
+# Processing options
+export EMBEDDING_DEVICE="cpu"  # or "cuda" for GPU
+export LLM_MODEL="llama3"      # or other Ollama models
 ```
 
-#### **3. Start API Server**
-```bash
-# Start REST API server
-python main.py serve
-
-# Server runs at http://localhost:8000
-# OpenAPI docs at http://localhost:8000/docs
-```
-
-#### **4. Check System Status**
-```bash
-# System health and statistics
-python main.py status
-
-# Configuration details
-python main.py config-info
-
-# JSON output for monitoring
-python main.py status --json-output
-```
-
-## 🏗️ Architecture
-
-### **System Components**
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Document      │    │    Indexing     │    │    Storage      │
-│   Processing    │───▶│    Pipeline     │───▶│    Layer        │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Multi-Modal   │    │   Chunking &    │    │   Qdrant +      │
-│   Extraction    │    │   Embedding     │    │   Elasticsearch │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│     Query       │    │     Hybrid      │    │     Result      │
-│   Processing    │───▶│     Search      │───▶│     Fusion      │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   CLI & REST    │    │   Concurrent    │    │      RRF        │
-│   Interfaces    │    │   Execution     │    │   Algorithm     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-### **Directory Structure**
-```
-optimAIze-indexer/
-├── src/
-│   ├── indexing/           # Document processing & indexing
-│   │   ├── pipeline.py     # Main indexing orchestrator
-│   │   ├── extractors/     # Multi-modal document extractors
-│   │   ├── chunking.py     # Text chunking strategies
-│   │   └── embedder.py     # Text embedding generation
-│   ├── retrieval/          # Search & retrieval system
-│   │   ├── search_engine.py # Main search coordinator
-│   │   ├── query_processor.py # Query preprocessing
-│   │   ├── fusion.py       # Result fusion algorithms
-│   │   ├── models.py       # Pydantic data models
-│   │   └── api.py          # FastAPI REST endpoints
-│   ├── storage/            # Data persistence layer
-│   │   ├── qdrant_client.py # Vector database client
-│   │   ├── elasticsearch_client.py # Keyword search client
-│   │   └── database.py     # SQLite metadata store
-│   ├── config/             # Configuration management
-│   │   ├── settings.py     # Application settings
-│   │   └── config.yaml     # Default configuration
-│   └── utils/              # Shared utilities
-│       ├── logger.py       # Structured logging
-│       ├── file_utils.py   # File operations
-│       └── text_utils.py   # Text processing
-├── data/
-│   ├── input/              # Documents to index
-│   ├── output/             # Processing artifacts
-│   └── logs/               # Application logs
-├── tests/                  # Test suites
-├── docker-compose.yml      # Service orchestration
-└── main.py                 # CLI entrypoint
-```
-
-## 🔍 API Reference
-
-### **REST Endpoints**
-
-#### **Search Documents**
-```http
-GET /search?q=your_query&mode=hybrid&top_k=5&min_similarity=0.0
-
-Response:
-{
-  "query": "employee benefits",
-  "mode": "hybrid", 
-  "results": [
-    {
-      "content": "...",
-      "file_name": "handbook.pdf",
-      "chunk_index": 5,
-      "score": 0.892,
-      "source_type": "hybrid",
-      "highlights": ["employee benefits", "health insurance"]
-    }
-  ],
-  "total_found": 12,
-  "search_time_ms": 245.7,
-  "fusion_method": "rrf"
-}
-```
-
-#### **System Health**
-```http
-GET /health
-
-Response:
-{
-  "status": "healthy",
-  "components": {
-    "qdrant": true,
-    "elasticsearch": true,
-    "embedder": true
-  },
-  "test_search_time_ms": 156.3
-}
-```
-
-#### **System Statistics**
-```http
-GET /stats
-
-Response:
-{
-  "documents": {
-    "total_indexed": 247,
-    "total_chunks": 1543
-  },
-  "storage": {
-    "qdrant_points": 1543,
-    "elasticsearch_docs": 1543
-  },
-  "last_indexed": "2025-06-07T12:30:45Z"
-}
-```
-
-## ⚙️ Configuration
-
-### **Main Settings** (`src/config/config.yaml`)
+### config.yaml Settings
 
 ```yaml
-# Document Processing
+# Document processing
 indexing:
-  input_directory: "data/input"
-  chunk_size: 1000          # tokens per chunk
-  chunk_overlap: 200        # overlap between chunks
-  batch_size: 10            # files per batch
+  chunk_size: 1000              # tokens per chunk
+  chunk_overlap: 200            # overlap between chunks
+  batch_size: 10                # files to process at once
 
-# Embedding Configuration  
-embeddings:
-  model_name: "nomic-ai/nomic-embed-text-v1"
-  dimension: 768
-  device: "cpu"             # or "cuda" for GPU
-
-# Search Configuration
+# Search settings
 retrieval:
-  fusion_method: "rrf"      # Reciprocal Rank Fusion
-  top_k_per_source: 20      # results per search engine
-  final_top_k: 10           # final results after fusion
-  min_similarity_threshold: 0.0
-  rrf_k: 60                 # RRF parameter
-  concurrent_search: true   # parallel search execution
+  fusion_method: "rrf"          # reciprocal rank fusion
+  top_k_per_source: 20          # results from each engine
+  final_top_k: 10               # final results after fusion
 
-# Storage
-qdrant:
-  url: "http://localhost:6333"
-  collection: "optimaize_documents"
-
-elasticsearch:
-  url: "http://localhost:9200" 
-  index: "optimaize_keywords"
+# LLM settings
+llm:
+  default_model: "llama3"
+  temperature: 0.7
+  max_tokens: 2048
 ```
 
-### **Environment Variables**
+## 📖 Usage Guide
+
+### CLI Commands
+
 ```bash
-# Storage URLs
-QDRANT_URL=http://localhost:6333
-ELASTICSEARCH_URL=http://localhost:9200
+# Index documents
+python main.py index [--input-dir path] [--force-reindex]
 
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
+# Search documents
+python main.py search "query text" [--mode hybrid] [--top-k 10]
 
-# Performance
-TOKENIZERS_PARALLELISM=false
-EMBEDDING_DEVICE=cpu
+# Ask questions with LLM
+python main.py ask "What are the main policies?" [--model llama3]
+
+# Check system status
+python main.py status
+
+# Health check
+python main.py health
+```
+
+### Supported Document Types
+
+- **PDF files** (.pdf)
+- **Word documents** (.docx)
+- **PowerPoint presentations** (.pptx)
+- **Excel spreadsheets** (.xlsx)
+- **Text files** (.txt)
+- **Markdown files** (.md)
+
+### Search Modes
+
+- **`hybrid`** (default): Combines vector and keyword search
+- **`vector`**: Semantic similarity search only
+- **`keyword`**: Traditional keyword search only
+
+## 🔍 How It Works
+
+### 1. Document Processing
+1. **Ingestion**: Reads documents from `data/input/`
+2. **Chunking**: Splits documents into overlapping chunks
+3. **Embedding**: Generates vector embeddings using SentenceTransformers
+4. **Storage**: Stores vectors in Qdrant and text in Elasticsearch
+
+### 2. Retrieval
+1. **Parallel Search**: Queries both vector and keyword stores
+2. **Fusion**: Combines results using Reciprocal Rank Fusion (RRF)
+3. **Ranking**: Returns top-k most relevant chunks
+
+### 3. LLM Processing
+1. **Context Building**: Formats retrieved chunks as context
+2. **Prompt Generation**: Uses templates to create structured prompts
+3. **Answer Generation**: Processes with Ollama LLM
+4. **Citation**: Links answers back to source documents
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Services not starting:**
+```bash
+# Check service logs
+docker-compose logs qdrant
+docker-compose logs elasticsearch
+docker-compose logs ollama
+
+# Restart services
+docker-compose restart
+```
+
+**Out of memory errors:**
+```bash
+# Reduce batch sizes in config.yaml
+indexing:
+  batch_size: 5  # Reduce from 10
+  chunk_size: 500  # Reduce from 1000
+```
+
+**Slow indexing:**
+```bash
+# Use GPU acceleration (if available)
+export EMBEDDING_DEVICE="cuda"
+
+# Increase batch size
+indexing:
+  batch_size: 20
+```
+
+**LLM not responding:**
+```bash
+# Check Ollama status
+docker-compose exec ollama ollama list
+
+# Restart Ollama
+docker-compose restart ollama
+
+# Re-pull model
+docker-compose exec ollama ollama pull llama3
+```
+
+### Health Checks
+
+```bash
+# System status
+python main.py status
+
+# Detailed health check
+python main.py health
+
+# Service-specific checks
+curl http://localhost:6333/health      # Qdrant
+curl http://localhost:9200/_cluster/health  # Elasticsearch
+curl http://localhost:11434/api/tags   # Ollama
 ```
 
 ## 📊 Performance
@@ -298,121 +331,33 @@ EMBEDDING_DEVICE=cpu
 - **Recall@10**: 0.76 (76% of relevant docs in top 10)
 - **Fusion Improvement**: 15-25% better than single-mode search
 
-## 🔧 Development
+### Performance Tuning
 
-### **Code Standards**
+**For Large Document Sets (>1000 files):**
+- Increase Elasticsearch heap: `ES_JAVA_OPTS=-Xms2g -Xmx2g`
+- Use GPU for embeddings: `EMBEDDING_DEVICE=cuda`
+- Increase batch sizes in config
+
+**For Limited Resources:**
+- Reduce chunk size: `chunk_size: 500`
+- Lower batch size: `batch_size: 5`
+- Use smaller embedding model in config
+
+## 📊 Monitoring
+
+### Database Statistics
 ```bash
-# Format code
-black src/ tests/
-
-# Type checking
-mypy src/
-
-# Run tests
-pytest tests/ -v
-
-# Coverage report
-pytest --cov=src tests/
+python main.py status
 ```
 
-### **Adding New Features**
-1. **Document Extractors**: Add to `src/indexing/extractors/`
-2. **Search Algorithms**: Extend `src/retrieval/fusion.py`
-3. **API Endpoints**: Add to `src/retrieval/api.py`
-
-### **Testing**
-```bash
-# Unit tests
-pytest tests/unit/
-
-# Integration tests (requires services)
-docker-compose up -d
-pytest tests/integration/
-
-# Load testing
-pytest tests/performance/ --benchmark-only
-```
-
-## 🐳 Docker Deployment
-
-### **Start Services**
-```bash
-# Start Qdrant + Elasticsearch
-docker-compose up -d
-
-# Check service health
-docker-compose ps
-```
-
-### **Production Deployment**
-```dockerfile
-# Dockerfile example
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY src/ src/
-COPY main.py .
-
-CMD ["python", "main.py", "serve"]
-```
-
-## 📈 Monitoring
-
-### **Health Checks**
-```bash
-# System status
-curl http://localhost:8000/health
-
-# Detailed metrics
-curl http://localhost:8000/stats
-
-# CLI monitoring
-python main.py status --json-output | jq
-```
-
-### **Logging**
-- **Structured JSON logs** in `data/logs/`
-- **Log levels**: DEBUG, INFO, WARNING, ERROR
-- **Automatic log rotation** and archival
-
-## 🤝 Contributing
-
-### **Development Setup**
-```bash
-# Development installation
-pip install -r requirements-dev.txt
-pre-commit install
-
-# Feature branches
-git checkout -b feature/new-feature
-# Make changes, test, commit
-git push origin feature/new-feature
-```
-
-### **Pull Request Process**
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit pull request with clear description
+### Log Files
+- Application logs: `data/logs/optimaize.log`
+- Docker logs: `docker-compose logs -f`
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **Qdrant** for vector database technology
-- **Elasticsearch** for keyword search capabilities  
-- **Nomic AI** for embedding models
-- **FastAPI** for API framework
-- **Pydantic** for data validation
-
 ---
 
-**⭐ Star this repo if OptimAIze helps with your RAG projects!**
-
-For questions, issues, or feature requests, please [open an issue](https://github.com/your-org/optimAIze-indexer/issues).
+**Happy Document Processing! 🚀**

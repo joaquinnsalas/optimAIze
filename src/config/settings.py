@@ -1,55 +1,65 @@
-"""Configuration management for OptimAIze."""
+"""Configuration settings for OptimAIze."""
 
 import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 class Config:
     """Configuration manager for OptimAIze."""
     
-    def __init__(self, config_path: str = "config/config.yaml"):
-        self.config_path = Path(config_path)
-        self._config = self._load_config()
-        self._apply_env_overrides()
+    def __init__(self):
+        # Look for config.yaml in the project root first, then in src/config
+        root_config = Path(__file__).parent.parent.parent / "config" / "config.yaml"
+        local_config = Path(__file__).parent / "config.yaml"
+        
+        if root_config.exists():
+            self.config_path = root_config
+        else:
+            self.config_path = local_config
+            
+        self._load_config()
+        
+        # Core settings
+        self.indexing = self.config.get("indexing", {})
+        self.embeddings = self.config.get("embeddings", {})
+        self.retrieval = self.config.get("retrieval", {})
+        self.qdrant = self.config.get("qdrant", {})
+        self.elasticsearch = self.config.get("elasticsearch", {})
+        self.api = self.config.get("api", {})
+        self.llm = self.config.get("llm", {})  # Add LLM config
+        self.database = self.config.get("database", {})  # Add database config
+        self.logging = self.config.get("logging", {})  # Add logging config
+        
+        # Validate critical settings
+        self._validate_config()
     
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self):
         """Load configuration from YAML file."""
-        if not self.config_path.exists():
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                self.config = yaml.safe_load(f)
+        except FileNotFoundError:
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
-        
-        with open(self.config_path, 'r') as f:
-            return yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in config file: {e}")
     
-    def _apply_env_overrides(self):
-        """Apply environment variable overrides."""
-        # Qdrant URL override
-        if qdrant_url := os.getenv("QDRANT_URL"):
-            self._config["qdrant"]["url"] = qdrant_url
+    def _validate_config(self):
+        """Validate configuration settings."""
+        # Check required sections
+        required_sections = ["indexing", "embeddings", "retrieval", "qdrant", "elasticsearch"]
+        for section in required_sections:
+            if section not in self.config:
+                raise ValueError(f"Missing required config section: {section}")
         
-        # Elasticsearch URL override
-        if es_url := os.getenv("ELASTICSEARCH_URL"):
-            self._config["elasticsearch"]["url"] = es_url
-        
-        # Database overrides
-        if db_type := os.getenv("DATABASE_TYPE"):
-            self._config["database"]["type"] = db_type
-        
-        if pg_url := os.getenv("POSTGRESQL_URL"):
-            self._config["database"]["postgresql_url"] = pg_url
-        
-        # Embedding device override
-        if device := os.getenv("EMBEDDING_DEVICE"):
-            self._config["embeddings"]["device"] = device
+        # Validate embeddings model
+        if not self.embeddings.get("model_name"):
+            raise ValueError("Embeddings model_name is required")
     
-    def get(self, key: str, default=None):
-        """Get configuration value using dot notation (e.g., 'app.name')."""
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get configuration value with optional default."""
         keys = key.split('.')
-        value = self._config
+        value = self.config
         
         for k in keys:
             if isinstance(value, dict) and k in value:
@@ -59,37 +69,48 @@ class Config:
         
         return value
     
-    @property
-    def app(self) -> Dict[str, Any]:
-        return self._config.get("app", {})
+    def update_from_env(self):
+        """Update configuration from environment variables."""
+        # Qdrant URL
+        if os.getenv("QDRANT_URL"):
+            self.qdrant["url"] = os.getenv("QDRANT_URL")
+        
+        # Elasticsearch URL
+        if os.getenv("ELASTICSEARCH_URL"):
+            self.elasticsearch["url"] = os.getenv("ELASTICSEARCH_URL")
+        
+        # API settings
+        if os.getenv("API_HOST"):
+            self.api["host"] = os.getenv("API_HOST")
+        if os.getenv("API_PORT"):
+            self.api["port"] = int(os.getenv("API_PORT"))
+        
+        # LLM settings
+        if os.getenv("OLLAMA_URL"):
+            self.llm["ollama_url"] = os.getenv("OLLAMA_URL")
+        if os.getenv("LLM_MODEL"):
+            self.llm["default_model"] = os.getenv("LLM_MODEL")
+        
+        # Embedding device
+        if os.getenv("EMBEDDING_DEVICE"):
+            self.embeddings["device"] = os.getenv("EMBEDDING_DEVICE")
     
-    @property
-    def indexing(self) -> Dict[str, Any]:
-        return self._config.get("indexing", {})
-    
-    @property
-    def embeddings(self) -> Dict[str, Any]:
-        return self._config.get("embeddings", {})
-    
-    @property
-    def qdrant(self) -> Dict[str, Any]:
-        return self._config.get("qdrant", {})
-    
-    @property
-    def elasticsearch(self) -> Dict[str, Any]:
-        return self._config.get("elasticsearch", {})
-    
-    @property
-    def database(self) -> Dict[str, Any]:
-        return self._config.get("database", {})
-    
-    @property
-    def logging(self) -> Dict[str, Any]:
-        return self._config.get("logging", {})
-    
-    @property
-    def retrieval(self) -> Dict[str, Any]:
-        return self._config.get("retrieval", {})
+    def to_dict(self) -> Dict[str, Any]:
+        """Return configuration as dictionary."""
+        return {
+            "indexing": self.indexing,
+            "embeddings": self.embeddings,
+            "retrieval": self.retrieval,
+            "qdrant": self.qdrant,
+            "elasticsearch": self.elasticsearch,
+            "api": self.api,
+            "llm": self.llm,
+            "database": self.database,
+            "logging": self.logging
+        }
 
-# Global config instance
+# Global configuration instance
 config = Config()
+
+# Update from environment variables
+config.update_from_env()

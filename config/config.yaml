@@ -1,67 +1,82 @@
-# OptimAIze Configuration
-app:
-  name: "OptimAIze"
-  version: "1.0.0"
-  log_level: "INFO"
-
-# File processing
+# Document Processing Configuration
 indexing:
-  input_directory: "data/documents"
-  supported_extensions: [".pdf", ".docx", ".pptx", ".txt", ".md", ".xlsx"]
-  chunk_size: 512
-  chunk_overlap: 50
-  ocr_dpi: 300
-  batch_size: 100
+  input_directory: "data/input"
+  output_directory: "data/output"
+  chunk_size: 1000              # tokens per chunk
+  chunk_overlap: 200            # overlap between chunks
+  batch_size: 10                # files to process at once
+  enable_ocr: true              # enable OCR for images
+  supported_formats:
+    - pdf
+    - docx
+    - pptx
+    - xlsx
+    - txt
+    - md
 
-# Embeddings
+# Embedding Configuration
 embeddings:
   model_name: "nomic-ai/nomic-embed-text-v1"
   dimension: 768
-  device: "cpu"  # or "cuda" if available
+  device: "cpu"                 # cpu, cuda, mps (for M1 Macs)
+  batch_size: 32
+  normalize: true
 
-# Vector Database (Qdrant)
+# Retrieval Configuration
+retrieval:
+  fusion_method: "rrf"          # reciprocal rank fusion
+  top_k_per_source: 20          # results from each search engine
+  final_top_k: 10               # final results after fusion
+  min_similarity_threshold: 0.0
+  rrf_k: 60                     # RRF parameter
+  concurrent_search: true       # run searches in parallel
+  search_timeout: 30.0          # timeout in seconds
+
+# Qdrant Configuration
 qdrant:
   url: "http://localhost:6333"
-  collection_name: "optimaize_documents"
+  collection: "optimaize_documents"
   vector_size: 768
-  distance: "COSINE"
+  distance: "Cosine"
+  batch_size: 100
 
-# Elasticsearch
+# Elasticsearch Configuration  
 elasticsearch:
   url: "http://localhost:9200"
-  index_name: "optimaize_keywords"
-  
-# Metadata Database
-database:
-  type: "sqlite"  # or "postgresql"
-  sqlite_path: "data/metadata.db"
-  # postgresql_url: "postgresql://user:password@localhost/optimaize"
+  index: "optimaize_keywords"
+  batch_size: 100
+  analysis:
+    analyzer: "standard"
+    max_tokens: 10000
 
-# Retrieval & Search Configuration
-retrieval:
-  # Search parameters
-  top_k_per_source: 20        # Retrieve top-20 from each source
-  final_top_k: 10             # Return top-10 after fusion
-  min_similarity_threshold: 0.0  # Minimum similarity score for Qdrant
-  
-  # Fusion method configuration
-  fusion_method: "rrf"        # "rrf" or "weighted"
-  rrf_k: 60                   # RRF parameter (typically 60)
-  
-  # Weighted fusion (if fusion_method = "weighted")
-  semantic_weight: 0.7
-  keyword_weight: 0.3
-  
-  # Query processing
-  query_preprocessing: true
-  max_query_length: 1000      # Optional limit
-  
-  # Performance
-  search_timeout: 30.0        # seconds
-  concurrent_search: true
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
 
-# Logging
+# LLM Configuration
+llm:
+  default_model: "llama3"         # Default Ollama model
+  ollama_url: "http://localhost:11434"  # Ollama server URL
+  temperature: 0.7                # Generation temperature (0.0-1.0)
+  max_tokens: 2048               # Maximum tokens to generate
+  template: "default.txt"         # Default prompt template
+  timeout: 120                   # Generation timeout in seconds
+  fallback_enabled: true         # Enable graceful fallback on errors
+
+# Logging Configuration
 logging:
-  log_dir: "data/logs"
-  log_file: "optimaize.log"
-  error_log: "errors.log"
+  level: "INFO"                 # DEBUG, INFO, WARNING, ERROR
+  format: "structured"          # structured, simple
+  file_logging: true
+  log_directory: "data/logs"
+  max_file_size: "10MB"
+  backup_count: 5
+
+  # Database Configuration
+database:
+  path: "data/optimaize.db"
+  echo: false
+  pool_size: 10
+  max_overflow: 20
