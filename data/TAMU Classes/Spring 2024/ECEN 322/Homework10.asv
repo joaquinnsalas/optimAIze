@@ -1,9 +1,0 @@
-% constants needed
-epsilon_0 = 8.854e-12; % Permittivity of free space (F/m)
-sigma = 4;  %conductivity
-mu = (1) * (4*pi*e-7); % relivate mu r
-epsilon = (8.854e-12) * (80); % relitave epsilon
-
-% frequency range from 1k to 10GHz
-f = logspace(3, 10, 1000); % 1000 specifies the amount of points
-omega = 2*pi*f;            % Angular frequency
