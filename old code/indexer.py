@@ -1,16 +1,16 @@
-# src/indexer.py
-
 import os
 import time
 import uuid
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+from typing import List, Dict
 
 from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
 from sentence_transformers import SentenceTransformer
+import numpy as np
 
 import fitz  # PyMuPDF
 from PIL import Image
@@ -24,7 +24,6 @@ import logging
 # Paths & Config
 # -----------------------------
 BASE_DIR        = Path(__file__).parent.parent.resolve()
-#DATA_DIR        = BASE_DIR / "data" #commenting this out for a bit
 DATA_DIR = BASE_DIR / "data" / "test"  # For testing
 LOGS_DIR        = BASE_DIR / "logs"
 SQLITE_DB       = BASE_DIR / "data" / "index_metadata.db"
@@ -54,12 +53,12 @@ logger = logging.getLogger(__name__)
 # Initialize SQLite Metadata DB
 # -----------------------------
 def init_metadata_db():
-    """Initialize SQLite database with proper error handling"""
+    """Initialize SQLite database with enhanced schema"""
     try:
         conn = sqlite3.connect(SQLITE_DB)
         c = conn.cursor()
         
-        # Table for document‐level metadata
+        # Enhanced documents table with more metadata
         c.execute("""
           CREATE TABLE IF NOT EXISTS documents (
             document_id   TEXT PRIMARY KEY,
@@ -67,8 +66,16 @@ def init_metadata_db():
             file_name     TEXT NOT NULL,
             title         TEXT,
             author        TEXT,
+            subject       TEXT,
+            keywords      TEXT,
+            creation_date TEXT,
             last_modified REAL,
-            category      TEXT
+            category      TEXT,
+            page_count    INTEGER,
+            has_toc       BOOLEAN,
+            has_images    BOOLEAN,
+            estimated_reading_time INTEGER,
+            first_page_preview TEXT
           )
         """)
         
@@ -78,6 +85,8 @@ def init_metadata_db():
             chunk_id     TEXT PRIMARY KEY,
             document_id  TEXT NOT NULL,
             chunk_text   TEXT NOT NULL,
+            chunk_index  INTEGER NOT NULL,
+            chunk_type   TEXT DEFAULT 'semantic',
             FOREIGN KEY(document_id) REFERENCES documents(document_id)
           )
         """)
@@ -149,7 +158,7 @@ def setup_qdrant_client(embed_dim):
         raise
 
 # -----------------------------
-# File Parsers
+# Enhanced File Parsers
 # -----------------------------
 def parse_txt(file_path: Path) -> str:
     """Parse text file with better error handling"""
@@ -228,15 +237,95 @@ SUPPORTED_EXTS = {
 }
 
 # -----------------------------
-# Chunking Function
+# Enhanced Metadata Extraction
 # -----------------------------
-def chunk_text(text: str, max_len: int = 500, overlap: int = 50) -> list[str]:
-    """
-    Improved chunking with overlap and sentence boundary awareness
-    """
+def extract_pdf_metadata(file_path: Path) -> Dict:
+    """Extract rich metadata from PDFs"""
+    try:
+        doc = fitz.open(str(file_path))
+        metadata = doc.metadata
+        
+        # Extract additional info
+        enhanced_metadata = {
+            'title': metadata.get('title', file_path.stem),
+            'author': metadata.get('author', ''),
+            'subject': metadata.get('subject', ''),
+            'keywords': metadata.get('keywords', ''),
+            'creation_date': metadata.get('creationDate', ''),
+            'page_count': len(doc),
+            'has_toc': len(doc.get_toc()) > 0,
+            'has_images': any(page.get_images() for page in doc),
+            'estimated_reading_time': len(doc) * 2  # 2 min per page
+        }
+        
+        # Extract first page text for better categorization
+        if len(doc) > 0:
+            first_page = doc[0].get_text()[:500]
+            enhanced_metadata['first_page_preview'] = first_page
+        
+        doc.close()
+        return enhanced_metadata
+    except Exception as e:
+        logger.warning(f"Failed to extract PDF metadata: {e}")
+        return {}
 
-    print("DEBUG: chunk_text function called with text length:", len(text) if text else 0)  # ADD THIS LINE
+# -----------------------------
+# NEW: Semantic Chunking Function
+# -----------------------------
+def semantic_chunk_text(text: str, model: SentenceTransformer, max_len: int = 512, similarity_threshold: float = 0.5) -> List[str]:
+    """Chunk text based on semantic similarity between sentences"""
+    
+    # Split into sentences (improved sentence splitting)
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+', text.replace('\n', ' '))
+    sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 10]
+    
+    if not sentences:
+        return []
+    
+    logger.info(f"Semantic chunking: Processing {len(sentences)} sentences")
+    
+    # Encode all sentences
+    embeddings = model.encode(sentences, show_progress_bar=False)
+    
+    chunks = []
+    current_chunk = []
+    current_chunk_embedding = None
+    
+    for i, (sentence, embedding) in enumerate(zip(sentences, embeddings)):
+        if not current_chunk:
+            current_chunk = [sentence]
+            current_chunk_embedding = embedding
+        else:
+            # Calculate similarity with current chunk
+            similarity = np.dot(embedding, current_chunk_embedding) / (
+                np.linalg.norm(embedding) * np.linalg.norm(current_chunk_embedding)
+            )
+            
+            # Check if we should continue the chunk
+            current_text = ' '.join(current_chunk + [sentence])
+            
+            if similarity > similarity_threshold and len(current_text) < max_len:
+                current_chunk.append(sentence)
+                # Update chunk embedding as weighted average
+                current_chunk_embedding = (current_chunk_embedding * len(current_chunk) + embedding) / (len(current_chunk) + 1)
+            else:
+                # Save current chunk and start new one
+                chunks.append(' '.join(current_chunk))
+                current_chunk = [sentence]
+                current_chunk_embedding = embedding
+    
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+    
+    logger.info(f"Created {len(chunks)} semantic chunks")
+    return chunks
 
+# -----------------------------
+# Fallback to simple chunking for very long texts
+# -----------------------------
+def chunk_text(text: str, max_len: int = 500, overlap: int = 50) -> List[str]:
+    """Simple chunking with overlap - used as fallback"""
     if not text or not text.strip():
         return []
     
@@ -260,7 +349,7 @@ def chunk_text(text: str, max_len: int = 500, overlap: int = 50) -> list[str]:
             break
         
         # Try to find a good breaking point (sentence end, then word boundary)
-        chunk_content = text[start:end]  # RENAMED from chunk_text to chunk_content
+        chunk_content = text[start:end]
         
         # Look for sentence endings
         last_sentence = max(
@@ -289,13 +378,10 @@ def chunk_text(text: str, max_len: int = 500, overlap: int = 50) -> list[str]:
     return [chunk for chunk in chunks if chunk.strip()]
 
 # -----------------------------
-# Insert or Retrieve Document Metadata
+# Enhanced Document Metadata Insertion
 # -----------------------------
-def upsert_document_metadata(conn: sqlite3.Connection, filepath: Path) -> str:
-    """
-    If the file_path is already in the documents table, return its document_id.
-    Otherwise, insert a new row and return the newly generated document_id.
-    """
+def upsert_document_metadata(conn: sqlite3.Connection, filepath: Path, metadata: Dict = None) -> str:
+    """Insert or update document with enhanced metadata"""
     try:
         c = conn.cursor()
         file_path_str = str(filepath.resolve())
@@ -306,25 +392,42 @@ def upsert_document_metadata(conn: sqlite3.Connection, filepath: Path) -> str:
         if row:
             return row[0]
 
-        # Not present → insert
+        # Not present → insert with enhanced metadata
         document_id = str(uuid.uuid4())
-        file_name     = filepath.name
-        title         = filepath.stem
-        author        = None
+        
+        # Extract metadata based on file type
+        if filepath.suffix.lower() == '.pdf' and metadata is None:
+            metadata = extract_pdf_metadata(filepath)
+        
+        if metadata is None:
+            metadata = {}
+        
+        # Prepare values
+        file_name = filepath.name
+        title = metadata.get('title', filepath.stem)
+        author = metadata.get('author', None)
+        subject = metadata.get('subject', None)
+        keywords = metadata.get('keywords', None)
+        creation_date = metadata.get('creation_date', None)
         last_modified = filepath.stat().st_mtime
-        category      = filepath.parent.name
+        category = filepath.parent.name
+        page_count = metadata.get('page_count', None)
+        has_toc = metadata.get('has_toc', False)
+        has_images = metadata.get('has_images', False)
+        estimated_reading_time = metadata.get('estimated_reading_time', None)
+        first_page_preview = metadata.get('first_page_preview', '')[:500]  # Limit preview
 
         c.execute("""
-          INSERT INTO documents (document_id, file_path, file_name, title, author, last_modified, category)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO documents (
+            document_id, file_path, file_name, title, author, subject, keywords,
+            creation_date, last_modified, category, page_count, has_toc, 
+            has_images, estimated_reading_time, first_page_preview
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            document_id,
-            file_path_str,
-            file_name,
-            title,
-            author,
-            last_modified,
-            category
+            document_id, file_path_str, file_name, title, author, subject, keywords,
+            creation_date, last_modified, category, page_count, has_toc, 
+            has_images, estimated_reading_time, first_page_preview
         ))
         conn.commit()
         return document_id
@@ -339,26 +442,25 @@ def upsert_document_metadata(conn: sqlite3.Connection, filepath: Path) -> str:
 def insert_chunk_metadata(
     conn: sqlite3.Connection,
     document_id: str,
-    chunk_content: str  # CHANGED from chunk_text
+    chunk_content: str,
+    chunk_index: int,
+    chunk_type: str = 'semantic'
 ) -> str:
-    """
-    Inserts a chunk into the `chunks` table and its text into `chunks_fts`.
-    Returns the generated chunk_id.
-    """
+    """Inserts a chunk into the chunks table with chunk type"""
     try:
         c = conn.cursor()
         chunk_id = str(uuid.uuid4())
         
         # Insert into chunks table
         c.execute("""
-          INSERT INTO chunks (chunk_id, document_id, chunk_text)
-          VALUES (?, ?, ?)
-        """, (chunk_id, document_id, chunk_content))  # CHANGED
+          INSERT INTO chunks (chunk_id, document_id, chunk_text, chunk_index, chunk_type)
+          VALUES (?, ?, ?, ?, ?)
+        """, (chunk_id, document_id, chunk_content, chunk_index, chunk_type))
         
         rowid = c.lastrowid
 
         # Insert into FTS5 index
-        c.execute("INSERT INTO chunks_fts(rowid, chunk_text) VALUES (?, ?)", (rowid, chunk_content))  # CHANGED
+        c.execute("INSERT INTO chunks_fts(rowid, chunk_text) VALUES (?, ?)", (rowid, chunk_content))
         conn.commit()
         return chunk_id
         
@@ -373,11 +475,10 @@ def process_and_index_file(
     conn: sqlite3.Connection,
     filepath: Path,
     client: QdrantClient,
-    model: SentenceTransformer
+    model: SentenceTransformer,
+    use_semantic_chunking: bool = True
 ):
-    """
-    Process and index a single file with comprehensive error handling
-    """
+    """Process and index a single file with semantic chunking"""
     try:
         logger.info(f"Processing: {filepath}")
 
@@ -396,23 +497,32 @@ def process_and_index_file(
             logger.warning(f"Skipped unreadable/empty: {filepath}")
             return
 
-        # 2) Chunk text
+        # 2) Chunk text - use semantic chunking by default
         logger.info("Step 2: Chunking text...")
-        chunks = chunk_text(text, max_len=500)
+        
+        if use_semantic_chunking and len(text) < 50000:  # Use semantic for reasonable sized docs
+            chunks = semantic_chunk_text(text, model, max_len=512, similarity_threshold=0.6)
+            chunk_type = 'semantic'
+        else:
+            # Fallback to simple chunking for very large texts
+            chunks = chunk_text(text, max_len=500)
+            chunk_type = 'simple'
+            logger.info(f"Using simple chunking for large document (size: {len(text)})")
+        
         if not chunks:
             logger.warning(f"No chunks returned for: {filepath}")
             return
 
-        logger.info(f"Step 2 complete: generated {len(chunks)} chunks")
+        logger.info(f"Step 2 complete: generated {len(chunks)} {chunk_type} chunks")
 
-        # 3) Upsert document metadata
+        # 3) Upsert document metadata with enhanced extraction
         document_id = upsert_document_metadata(conn, filepath)
 
         # 4) Insert each chunk into SQLite
         chunk_ids = []
         for i, chunk in enumerate(chunks):
             try:
-                chunk_id = insert_chunk_metadata(conn, document_id, chunk)
+                chunk_id = insert_chunk_metadata(conn, document_id, chunk, i, chunk_type)
                 chunk_ids.append(chunk_id)
             except Exception as e:
                 logger.error(f"Failed to insert chunk {i} for {filepath}: {e}")
@@ -431,7 +541,7 @@ def process_and_index_file(
             logger.error(f"Failed to generate embeddings for {filepath}: {e}")
             return
 
-        # 6) Prepare Qdrant points
+        # 6) Prepare Qdrant points with enhanced metadata
         points = []
         timestamp = time.time()
         
@@ -439,10 +549,14 @@ def process_and_index_file(
             try:
                 payload = {
                     "file_path":     str(filepath.resolve()),
+                    "file_name":     filepath.name,
                     "chunk":         chunk_content[:500],  # Truncate for payload size
                     "timestamp":     timestamp,
                     "file_type":     filepath.suffix.lower(),
                     "document_id":   document_id,
+                    "chunk_index":   i,
+                    "chunk_type":    chunk_type,
+                    "category":      filepath.parent.name
                 }
                 points.append(
                     PointStruct(
@@ -459,7 +573,7 @@ def process_and_index_file(
         if points:
             try:
                 client.upsert(collection_name=COLLECTION_NAME, points=points)
-                logger.info(f"Successfully indexed: {filepath} ({len(points)} chunks)")
+                logger.info(f"Successfully indexed: {filepath} ({len(points)} {chunk_type} chunks)")
             except Exception as e:
                 logger.error(f"Failed to upsert to Qdrant for {filepath}: {e}")
                 return
@@ -476,11 +590,10 @@ def index_directory(
     conn: sqlite3.Connection,
     data_path: Path,
     client: QdrantClient,
-    model: SentenceTransformer
+    model: SentenceTransformer,
+    use_semantic_chunking: bool = True
 ):
-    """
-    Recursively walk `data_path` and index all supported files
-    """
+    """Recursively walk data_path and index all supported files"""
     # Find all supported files
     supported_files = []
     for filepath in data_path.rglob("*"):
@@ -499,11 +612,12 @@ def index_directory(
         return
     
     logger.info(f"Found {len(supported_files)} supported files to index")
+    logger.info(f"Using {'semantic' if use_semantic_chunking else 'simple'} chunking")
     
     # Process each file
     for filepath in tqdm(supported_files, desc="Indexing files"):
         try:
-            process_and_index_file(conn, filepath, client, model)
+            process_and_index_file(conn, filepath, client, model, use_semantic_chunking)
         except Exception as e:
             logger.error(f"Critical error processing {filepath}: {e}")
             continue
@@ -512,9 +626,9 @@ def index_directory(
 # Main
 # -----------------------------
 def main():
-    """Main function with comprehensive error handling"""
+    """Main function with semantic chunking enabled"""
     try:
-        logger.info("🔍 Starting OptimAIze indexer...")
+        logger.info("🔍 Starting OptimAIze indexer with semantic chunking...")
         logger.info(f"Data directory: {DATA_DIR}")
         logger.info(f"SQLite database: {SQLITE_DB}")
         logger.info(f"Qdrant URL: {QDRANT_URL}")
@@ -534,9 +648,9 @@ def main():
         logger.info("Setting up Qdrant client...")
         client = setup_qdrant_client(embed_dim)
         
-        # Index files
-        logger.info("Starting file indexing...")
-        index_directory(conn, DATA_DIR, client, model)
+        # Index files with semantic chunking
+        logger.info("Starting file indexing with semantic chunking...")
+        index_directory(conn, DATA_DIR, client, model, use_semantic_chunking=True)
         
         # Cleanup
         conn.close()
