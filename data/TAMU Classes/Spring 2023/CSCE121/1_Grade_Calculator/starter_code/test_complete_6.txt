@@ -1,5 +1,0 @@
-exam 100
-hw 71.4
-lw 1
-engagement 100
-reading 100

@@ -1,3 +1,0 @@
-exam 80
-exam 85
-final-exam 85.01

@@ -1,3 +1,0 @@
-User ajitjain
-Post 42412212 ajitjain
-Post 15353343 ajitjain When deallocating #dynamic arrays, use delete[].
