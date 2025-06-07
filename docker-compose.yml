@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # Qdrant Vector Database
+  # Qdrant vector database
   qdrant:
-    image: qdrant/qdrant:v1.7.0
+    image: qdrant/qdrant:v1.7.4
     container_name: optimaize-qdrant
     ports:
       - "6333:6333"
@@ -18,64 +18,67 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
 
   # Elasticsearch for keyword search
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: optimaize-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
     ports:
       - "9200:9200"
       - "9300:9300"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - bootstrap.memory_lock=true
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
 
-  # OptimAIze Application (for future chunks)
-  optimaize-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: optimaize-app
+  # Ollama for LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: optimaize-ollama
     ports:
-      - "8000:8000"
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # OptimAIze application
+  optimaize:
+    build: .
+    container_name: optimaize-app
     volumes:
       - ./data:/app/data
       - ./config:/app/config
+      - ./src:/app/src
     environment:
       - QDRANT_URL=http://qdrant:6333
       - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - DATABASE_TYPE=sqlite
-      - EMBEDDING_DEVICE=cpu
+      - OLLAMA_URL=http://ollama:11434
+      - PYTHONPATH=/app
     depends_on:
       qdrant:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
-    restart: unless-stopped
-    profiles:
-      - app  # Only start with --profile app
+      ollama:
+        condition: service_healthy
+    command: tail -f /dev/null  # Keep container running for development
 
 volumes:
   qdrant_data:
-    driver: local
   elasticsearch_data:
-    driver: local
-
-networks:
-  default:
-    name: optimaize-network
+  ollama_data:

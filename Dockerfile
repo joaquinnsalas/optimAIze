@@ -1,51 +1,41 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
-# Set working directory
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Set work directory
 WORKDIR /app
 
-# Install system dependencies for OCR and document processing
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    poppler-utils \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
+    build-essential \
     curl \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better Docker layer caching
+# Copy requirements first for better caching
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY src/ ./src/
-COPY config/ ./config/
-COPY main.py .
+# Copy project files
+COPY . .
 
 # Create necessary directories
-RUN mkdir -p data/documents data/logs data/processed
+RUN mkdir -p data/input data/output data/logs src/llm/templates
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
+# Set permissions
+RUN chmod +x main.py
 
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash optimaize && \
-    chown -R optimaize:optimaize /app
-USER optimaize
+# Expose port for the API (when we add it later)
+EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "from src.storage.qdrant_client import qdrant_manager; from src.storage.elasticsearch_client import elasticsearch_manager; import sys; sys.exit(0 if qdrant_manager.health_check() and elasticsearch_manager.health_check() else 1)"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
 
 # Default command
 CMD ["python", "main.py", "--help"]

@@ -19,6 +19,101 @@ def cli():
     pass
 
 @cli.command()
+@click.argument('question')
+@click.option('--mode', '-m', default='hybrid', help='Search mode: hybrid, semantic, keyword')
+@click.option('--top-k', '-k', default=5, help='Number of chunks to retrieve')
+@click.option('--min-similarity', '-s', default=0.0, help='Minimum similarity threshold')
+@click.option('--model', default=None, help='LLM model to use (overrides config)')
+@click.option('--temperature', '-t', type=float, default=None, help='Generation temperature (0.0-1.0)')
+@click.option('--max-tokens', type=int, default=None, help='Maximum tokens to generate')
+@click.option('--show-sources', is_flag=True, help='Show detailed source information')
+def ask(question, mode, top_k, min_similarity, model, temperature, max_tokens, show_sources):
+    """Ask a question and get an AI-generated answer with citations."""
+    try:
+        import asyncio
+        from src.llm.processor import llm_processor
+        from src.llm.models import LLMQuery
+        
+        async def run_generation():
+            llm_query = LLMQuery(
+                query=question,
+                mode=mode,
+                top_k=top_k,
+                min_similarity=min_similarity,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            response = await llm_processor.process_query(llm_query)
+            return response
+        
+        # Run the generation
+        response = asyncio.run(run_generation())
+        
+        # Display results
+        click.echo(f"\n🤖 Question: {question}")
+        click.echo("=" * 80)
+        
+        # Show the answer
+        click.echo(f"\n📝 Answer:")
+        click.echo(response.llm_answer)
+        
+        # Show metadata
+        metadata = response.metadata
+        click.echo(f"\n📊 Generation Info:")
+        click.echo(f"  - Model: {metadata.get('model', 'unknown')}")
+        click.echo(f"  - Search mode: {metadata.get('search_mode', mode)}")
+        click.echo(f"  - Chunks used: {metadata.get('chunks_used', 0)}")
+        click.echo(f"  - Total time: {metadata.get('total_time_ms', 0):.1f}ms")
+        
+        if metadata.get('ollama_available', True):
+            click.echo(f"  - Search time: {metadata.get('search_time_ms', 0):.1f}ms")
+            click.echo(f"  - Generation time: {metadata.get('generation_time_ms', 0):.1f}ms")
+        else:
+            click.echo(f"  - ⚠️  LLM unavailable (fallback used)")
+            if metadata.get('error_message'):
+                click.echo(f"  - Error: {metadata.get('error_message')}")
+        
+        # Show sources
+        if response.sources and (show_sources or len(response.sources) <= 3):
+            click.echo(f"\n📚 Sources:")
+            for i, source in enumerate(response.sources, 1):
+                click.echo(f"  [{i}] {source.file_name}")
+                if source.page_number:
+                    click.echo(f"      Page {source.page_number}, Chunk {source.chunk_index + 1}")
+                else:
+                    click.echo(f"      Chunk {source.chunk_index + 1}")
+                click.echo(f"      Score: {source.score:.3f} ({source.source_type})")
+                
+                if show_sources:
+                    click.echo(f"      Preview: {source.content_preview}")
+                click.echo()
+        elif response.sources:
+            click.echo(f"\n📚 Sources: {len(response.sources)} documents (use --show-sources for details)")
+        
+        # Show search results if no LLM answer
+        if not response.llm_answer or "LLM is currently unavailable" in response.llm_answer:
+            if response.search_results:
+                click.echo(f"\n🔍 Raw Search Results:")
+                for i, result in enumerate(response.search_results[:3], 1):
+                    click.echo(f"  {i}. {result.file_name} (Score: {result.score:.3f})")
+                    preview = result.content[:150] + "..." if len(result.content) > 150 else result.content
+                    click.echo(f"     {preview}")
+                    click.echo()
+        
+    except ImportError as e:
+        logger.error(f"Import error in CLI ask: {e}")
+        click.echo(f"❌ LLM functionality not available: {e}")
+        click.echo("   Make sure all LLM dependencies are installed")
+    except Exception as e:
+        logger.error(f"CLI ask failed: {e}")
+        click.echo(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise click.Abort()
+
+@cli.command()
 @click.option('--force', '-f', is_flag=True, help='Force reprocessing of all files')
 @click.option('--input-dir', '-i', help='Override input directory')
 @click.option('--batch-size', '-b', type=int, help='Override batch size')

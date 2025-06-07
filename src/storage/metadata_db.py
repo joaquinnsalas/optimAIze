@@ -1,215 +1,227 @@
-"""Metadata database management for OptimAIze."""
+"""Metadata database for tracking document processing status."""
 
-import sqlite3
 import json
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, Float, Text, DateTime, Boolean
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Float, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from src.config.settings import config
+from sqlalchemy.orm import sessionmaker
+
 from src.utils.logger import logger
 
 Base = declarative_base()
 
-class FileMetadata(Base):
-    """SQLAlchemy model for file metadata."""
-    __tablename__ = "file_metadata"
+class ProcessedFile(Base):
+    """Database model for tracking processed files."""
+    __tablename__ = "processed_files"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    file_path = Column(String, unique=True, nullable=False)
+    file_path = Column(String, primary_key=True)
+    file_name = Column(String, nullable=False)
     file_hash = Column(String, nullable=False)
     file_size = Column(Integer, nullable=False)
-    modified_time = Column(Float, nullable=False)
-    processed_time = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     chunk_count = Column(Integer, default=0)
-    status = Column(String, default="pending")  # pending, processing, completed, failed
+    processing_time_ms = Column(Float, default=0.0)
+    status = Column(String, default="completed")  # completed, failed, processing
     error_message = Column(Text, nullable=True)
+    file_metadata = Column(Text, nullable=True)  # JSON string for additional metadata
+
+class DocumentChunk(Base):
+    """Database model for document chunks."""
+    __tablename__ = "document_chunks"
     
-class ChunkMetadata(Base):
-    """SQLAlchemy model for chunk metadata."""
-    __tablename__ = "chunk_metadata"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String, primary_key=True)  # UUID
     file_path = Column(String, nullable=False)
     chunk_index = Column(Integer, nullable=False)
-    chunk_id = Column(String, unique=True, nullable=False)  # UUID for Qdrant
-    content_preview = Column(Text, nullable=True)  # First 200 chars
-    chunk_size = Column(Integer, nullable=False)
-    qdrant_stored = Column(Boolean, default=False)
-    elasticsearch_stored = Column(Boolean, default=False)
-    created_time = Column(DateTime, default=datetime.utcnow)
+    content = Column(Text, nullable=False)
+    content_hash = Column(String, nullable=False)
+    page_number = Column(Integer, nullable=True)
+    chunk_type = Column(String, default="text")  # text, image, table
+    token_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    vector_indexed = Column(Boolean, default=False)
+    keyword_indexed = Column(Boolean, default=False)
 
 class MetadataDB:
-    """Database manager for file and chunk metadata."""
+    """Database manager for document metadata and processing status."""
     
-    def __init__(self):
-        self.db_config = config.database
-        self.engine = self._create_engine()
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self._create_tables()
-    
-    def _create_engine(self):
-        """Create database engine based on configuration."""
-        if self.db_config.get("type") == "postgresql":
-            db_url = self.db_config.get("postgresql_url")
-            if not db_url:
-                logger.error("PostgreSQL URL not configured, falling back to SQLite")
-                return self._create_sqlite_engine()
-            return create_engine(db_url)
+    def __init__(self, db_path: Optional[str] = None):
+        """Initialize metadata database connection."""
+        # Use simple defaults for database path
+        if db_path:
+            self.db_path = Path(db_path)
         else:
-            return self._create_sqlite_engine()
+            self.db_path = Path("data/optimaize.db")
+        
+        # Ensure database directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create SQLAlchemy engine with minimal SQLite configuration
+        self.engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            echo=False,  # Set to True for SQL debugging
+            connect_args={"check_same_thread": False}
+        )
+        
+        # Create all tables
+        Base.metadata.create_all(self.engine)
+        
+        # Create session factory
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        
+        logger.info(f"Metadata database initialized at {self.db_path}")
     
-    def _create_sqlite_engine(self):
-        """Create SQLite engine."""
-        db_path = Path(self.db_config.get("sqlite_path", "data/metadata.db"))
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        return create_engine(f"sqlite:///{db_path}")
-    
-    def _create_tables(self):
-        """Create database tables."""
+    @contextmanager
+    def get_session(self):
+        """Get database session with automatic cleanup."""
+        session = self.SessionLocal()
         try:
-            Base.metadata.create_all(bind=self.engine)
-            logger.info("Database tables created successfully")
-        except Exception as e:
-            logger.error(f"Error creating database tables: {e}")
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
             raise
+        finally:
+            session.close()
     
-    def get_session(self) -> Session:
-        """Get database session."""
-        return self.SessionLocal()
-    
-    def get_file_metadata(self, file_path: str) -> Optional[Dict[str, Any]]:
-        """Get file metadata by path."""
-        with self.get_session() as session:
-            try:
-                file_meta = session.query(FileMetadata).filter(
-                    FileMetadata.file_path == file_path
-                ).first()
-                
-                if file_meta:
-                    return {
-                        "id": file_meta.id,
-                        "file_path": file_meta.file_path,
-                        "file_hash": file_meta.file_hash,
-                        "file_size": file_meta.file_size,
-                        "modified_time": file_meta.modified_time,
-                        "processed_time": file_meta.processed_time,
-                        "chunk_count": file_meta.chunk_count,
-                        "status": file_meta.status,
-                        "error_message": file_meta.error_message
-                    }
-                return None
-            except Exception as e:
-                logger.error(f"Error getting file metadata for {file_path}: {e}")
-                return None
-    
-    def upsert_file_metadata(self, metadata: Dict[str, Any]) -> bool:
-        """Insert or update file metadata."""
-        with self.get_session() as session:
-            try:
-                existing = session.query(FileMetadata).filter(
-                    FileMetadata.file_path == metadata["file_path"]
-                ).first()
+    def record_file_processing(self, file_path: str, file_name: str, file_hash: str, 
+                             file_size: int, chunk_count: int, processing_time_ms: float,
+                             status: str = "completed", error_message: Optional[str] = None,
+                             metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Record file processing information."""
+        try:
+            with self.get_session() as session:
+                # Check if file already exists
+                existing = session.query(ProcessedFile).filter_by(file_path=file_path).first()
                 
                 if existing:
                     # Update existing record
-                    for key, value in metadata.items():
-                        if hasattr(existing, key):
-                            setattr(existing, key, value)
+                    existing.file_hash = file_hash
+                    existing.file_size = file_size
+                    existing.chunk_count = chunk_count
+                    existing.processing_time_ms = processing_time_ms
+                    existing.status = status
+                    existing.error_message = error_message
+                    existing.updated_at = datetime.utcnow()
+                    if metadata:
+                        existing.file_metadata = json.dumps(metadata)
                 else:
                     # Create new record
-                    file_meta = FileMetadata(**metadata)
-                    session.add(file_meta)
+                    processed_file = ProcessedFile(
+                        file_path=file_path,
+                        file_name=file_name,
+                        file_hash=file_hash,
+                        file_size=file_size,
+                        chunk_count=chunk_count,
+                        processing_time_ms=processing_time_ms,
+                        status=status,
+                        error_message=error_message,
+                        file_metadata=json.dumps(metadata) if metadata else None
+                    )
+                    session.add(processed_file)
                 
-                session.commit()
+                logger.debug(f"Recorded file processing: {file_name}")
                 return True
-            except Exception as e:
-                logger.error(f"Error upserting file metadata: {e}")
-                session.rollback()
-                return False
-    
-    def add_chunk_metadata(self, chunk_meta: Dict[str, Any]) -> bool:
-        """Add chunk metadata."""
-        with self.get_session() as session:
-            try:
-                chunk = ChunkMetadata(**chunk_meta)
-                session.add(chunk)
-                session.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Error adding chunk metadata: {e}")
-                session.rollback()
-                return False
-    
-    def get_chunk_metadata(self, file_path: str) -> List[Dict[str, Any]]:
-        """Get all chunk metadata for a file."""
-        with self.get_session() as session:
-            try:
-                chunks = session.query(ChunkMetadata).filter(
-                    ChunkMetadata.file_path == file_path
-                ).all()
                 
-                return [{
-                    "id": chunk.id,
-                    "file_path": chunk.file_path,
-                    "chunk_index": chunk.chunk_index,
-                    "chunk_id": chunk.chunk_id,
-                    "content_preview": chunk.content_preview,
-                    "chunk_size": chunk.chunk_size,
-                    "qdrant_stored": chunk.qdrant_stored,
-                    "elasticsearch_stored": chunk.elasticsearch_stored,
-                    "created_time": chunk.created_time
-                } for chunk in chunks]
-            except Exception as e:
-                logger.error(f"Error getting chunk metadata for {file_path}: {e}")
-                return []
+        except Exception as e:
+            logger.error(f"Failed to record file processing: {e}")
+            return False
     
-    def update_chunk_storage_status(self, chunk_id: str, qdrant: bool = None, elasticsearch: bool = None) -> bool:
-        """Update chunk storage status."""
-        with self.get_session() as session:
-            try:
-                chunk = session.query(ChunkMetadata).filter(
-                    ChunkMetadata.chunk_id == chunk_id
+    def is_file_processed(self, file_path: str, file_hash: str) -> bool:
+        """Check if file has been processed with the same content."""
+        try:
+            with self.get_session() as session:
+                result = session.query(ProcessedFile).filter_by(
+                    file_path=file_path,
+                    file_hash=file_hash,
+                    status="completed"
                 ).first()
-                
-                if chunk:
-                    if qdrant is not None:
-                        chunk.qdrant_stored = qdrant
-                    if elasticsearch is not None:
-                        chunk.elasticsearch_stored = elasticsearch
-                    session.commit()
-                    return True
-                return False
-            except Exception as e:
-                logger.error(f"Error updating chunk storage status: {e}")
-                session.rollback()
-                return False
+                return result is not None
+        except Exception as e:
+            logger.error(f"Failed to check file processing status: {e}")
+            return False
     
-    def get_processing_stats(self) -> Dict[str, int]:
-        """Get processing statistics."""
-        with self.get_session() as session:
-            try:
-                total_files = session.query(FileMetadata).count()
-                completed_files = session.query(FileMetadata).filter(
-                    FileMetadata.status == "completed"
-                ).count()
-                failed_files = session.query(FileMetadata).filter(
-                    FileMetadata.status == "failed"
-                ).count()
-                total_chunks = session.query(ChunkMetadata).count()
+    def get_processed_files(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get list of processed files."""
+        try:
+            with self.get_session() as session:
+                query = session.query(ProcessedFile)
+                if status:
+                    query = query.filter_by(status=status)
+                
+                files = []
+                for file_record in query.all():
+                    file_data = {
+                        "file_path": file_record.file_path,
+                        "file_name": file_record.file_name,
+                        "file_hash": file_record.file_hash,
+                        "file_size": file_record.file_size,
+                        "processed_at": file_record.processed_at.isoformat(),
+                        "updated_at": file_record.updated_at.isoformat(),
+                        "chunk_count": file_record.chunk_count,
+                        "processing_time_ms": file_record.processing_time_ms,
+                        "status": file_record.status
+                    }
+                    if file_record.file_metadata:
+                        try:
+                            file_data["metadata"] = json.loads(file_record.file_metadata)
+                        except json.JSONDecodeError:
+                            file_data["metadata"] = {}
+                    
+                    files.append(file_data)
+                
+                return files
+                
+        except Exception as e:
+            logger.error(f"Failed to get processed files: {e}")
+            return []
+    
+    def get_database_stats(self) -> Dict[str, Any]:
+        """Get database statistics."""
+        try:
+            with self.get_session() as session:
+                total_files = session.query(ProcessedFile).count()
+                completed_files = session.query(ProcessedFile).filter_by(status="completed").count()
+                failed_files = session.query(ProcessedFile).filter_by(status="failed").count()
+                total_chunks = session.query(DocumentChunk).count()
+                
+                # Get latest processing time
+                latest_file = session.query(ProcessedFile).order_by(ProcessedFile.updated_at.desc()).first()
+                last_update = latest_file.updated_at.isoformat() if latest_file else None
                 
                 return {
                     "total_files": total_files,
                     "completed_files": completed_files,
                     "failed_files": failed_files,
-                    "processing_files": total_files - completed_files - failed_files,
-                    "total_chunks": total_chunks
+                    "total_chunks": total_chunks,
+                    "last_update": last_update,
+                    "database_path": str(self.db_path)
                 }
-            except Exception as e:
-                logger.error(f"Error getting processing stats: {e}")
-                return {}
+                
+        except Exception as e:
+            logger.error(f"Failed to get database stats: {e}")
+            return {
+                "total_files": 0,
+                "completed_files": 0,
+                "failed_files": 0,
+                "total_chunks": 0,
+                "last_update": None,
+                "database_path": str(self.db_path)
+            }
 
-# Global metadata database instance
-metadata_db = MetadataDB()
+# Lazy initialization to avoid import-time issues
+_metadata_db = None
+
+def get_metadata_db():
+    """Get metadata database instance with lazy initialization."""
+    global _metadata_db
+    if _metadata_db is None:
+        _metadata_db = MetadataDB()
+    return _metadata_db
+
+# For backward compatibility
+metadata_db = get_metadata_db()
