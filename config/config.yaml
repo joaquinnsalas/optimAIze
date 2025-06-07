@@ -37,6 +37,29 @@ database:
   sqlite_path: "data/metadata.db"
   # postgresql_url: "postgresql://user:password@localhost/optimaize"
 
+# Retrieval & Search Configuration
+retrieval:
+  # Search parameters
+  top_k_per_source: 20        # Retrieve top-20 from each source
+  final_top_k: 10             # Return top-10 after fusion
+  min_similarity_threshold: 0.0  # Minimum similarity score for Qdrant
+  
+  # Fusion method configuration
+  fusion_method: "rrf"        # "rrf" or "weighted"
+  rrf_k: 60                   # RRF parameter (typically 60)
+  
+  # Weighted fusion (if fusion_method = "weighted")
+  semantic_weight: 0.7
+  keyword_weight: 0.3
+  
+  # Query processing
+  query_preprocessing: true
+  max_query_length: 1000      # Optional limit
+  
+  # Performance
+  search_timeout: 30.0        # seconds
+  concurrent_search: true
+
 # Logging
 logging:
   log_dir: "data/logs"

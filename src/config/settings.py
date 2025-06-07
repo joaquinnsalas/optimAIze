@@ -86,6 +86,10 @@ class Config:
     @property
     def logging(self) -> Dict[str, Any]:
         return self._config.get("logging", {})
+    
+    @property
+    def retrieval(self) -> Dict[str, Any]:
+        return self._config.get("retrieval", {})
 
 # Global config instance
 config = Config()
