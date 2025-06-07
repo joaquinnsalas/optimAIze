@@ -1,0 +1,19 @@
+OptimAIze Enterprise Search System
+
+This is a sample document for testing the Haystack-based ingestion pipeline.
+
+Key Features:
+- Semantic search using embeddings
+- Full-text search with SQLite FTS5
+- Support for PDF, DOCX, PPTX, and TXT files
+- OCR support for scanned documents
+- Hybrid search combining semantic and keyword approaches
+
+Technical Details:
+The system uses Qdrant as a vector database for storing document embeddings.
+SQLite with FTS5 provides fast full-text search capabilities.
+Haystack orchestrates the document processing pipeline.
+
+This document contains multiple paragraphs to test the chunking functionality.
+Each chunk should be approximately 500 words with 50-word overlap.
+The system should create multiple chunks from this document.

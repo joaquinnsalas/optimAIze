@@ -1,0 +1,44 @@
+# OptimAIze Configuration
+app:
+  name: "OptimAIze"
+  version: "1.0.0"
+  log_level: "INFO"
+
+# File processing
+indexing:
+  input_directory: "data/documents"
+  supported_extensions: [".pdf", ".docx", ".pptx", ".txt", ".md", ".xlsx"]
+  chunk_size: 512
+  chunk_overlap: 50
+  ocr_dpi: 300
+  batch_size: 100
+
+# Embeddings
+embeddings:
+  model_name: "nomic-ai/nomic-embed-text-v1"
+  dimension: 768
+  device: "cpu"  # or "cuda" if available
+
+# Vector Database (Qdrant)
+qdrant:
+  url: "http://localhost:6333"
+  collection_name: "optimaize_documents"
+  vector_size: 768
+  distance: "COSINE"
+
+# Elasticsearch
+elasticsearch:
+  url: "http://localhost:9200"
+  index_name: "optimaize_keywords"
+  
+# Metadata Database
+database:
+  type: "sqlite"  # or "postgresql"
+  sqlite_path: "data/metadata.db"
+  # postgresql_url: "postgresql://user:password@localhost/optimaize"
+
+# Logging
+logging:
+  log_dir: "data/logs"
+  log_file: "optimaize.log"
+  error_log: "errors.log"
