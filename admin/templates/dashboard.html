@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - OptimAIze Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-chat-dots fs-1 me-3"></i>
+                    <div>
+                        <h5 class="card-title">Total Queries</h5>
+                        <h3 class="mb-0">{{ stats.total_queries }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-speedometer fs-1 me-3"></i>
+                    <div>
+                        <h5 class="card-title">Avg Latency</h5>
+                        <h3 class="mb-0">{{ stats.avg_latency_ms }}ms</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-cpu fs-1 me-3"></i>
+                    <div>
+                        <h5 class="card-title">Total Tokens</h5>
+                        <h3 class="mb-0">{{ "{:,}".format(stats.total_tokens) }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-files fs-1 me-3"></i>
+                    <div>
+                        <h5 class="card-title">Avg Chunks</h5>
+                        <h3 class="mb-0">{{ stats.avg_chunks_retrieved }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Settings Overview -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Active Settings</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>Active LLM:</strong></td>
+                        <td>
+                            <span class="badge bg-primary">{{ settings.get('active_llm', 'ollama') }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Model:</strong></td>
+                        <td>{{ settings.get('ollama_model', 'llama3') }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Retrieval Top-K:</strong></td>
+                        <td>{{ settings.get('retrieval_top_k', 10) }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Search Mode:</strong></td>
+                        <td>
+                            <span class="badge bg-success">{{ settings.get('search_mode', 'hybrid') }}</span>
+                        </td>
+                    </tr>
+                </table>
+                <a href="{{ url_for('settings') }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-gear"></i> Manage Settings
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Models Used</h5>
+            </div>
+            <div class="card-body">
+                {% if stats.models_used %}
+                    {% for model in stats.models_used %}
+                        <span class="badge bg-secondary me-1 mb-1">{{ model }}</span>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted mb-0">No models used yet</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Activity</h5>
+    </div>
+    <div class="card-body">
+        {% if recent_logs %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>User</th>
+                            <th>Query</th>
+                            <th>Model</th>
+                            <th>Latency</th>
+                            <th>Tokens</th>
+                            <th>Mode</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in recent_logs %}
+                        <tr>
+                            <td>
+                                <small>{{ log.timestamp.strftime('%m/%d %H:%M') }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark">{{ log.user }}</span>
+                            </td>
+                            <td>
+                                <span class="text-truncate d-inline-block" style="max-width: 300px;" title="{{ log.prompt }}">
+                                    {{ log.prompt[:50] }}{% if log.prompt|length > 50 %}...{% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                <small class="text-muted">{{ log.model_name }}</small>
+                            </td>
+                            <td>
+                                <small>{{ "%.0f"|format(log.total_latency_ms) }}ms</small>
+                            </td>
+                            <td>
+                                <small>{{ log.tokens_used }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-info">{{ log.search_mode }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-inbox display-1 text-muted"></i>
+                <p class="text-muted mt-2">No activity yet</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

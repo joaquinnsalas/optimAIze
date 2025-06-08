@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Templates - OptimAIze Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Prompt Templates</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addTemplateModal">
+            <i class="bi bi-plus-circle"></i> Add Template
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    {% for template in templates %}
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-file-text"></i> {{ template.name }}
+                </h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="editTemplate('{{ template.name }}')">
+                    <i class="bi bi-pencil"></i> Edit
+                </button>
+            </div>
+            <div class="card-body">
+                {% if template.description %}
+                <p class="text-muted mb-2">{{ template.description }}</p>
+                {% endif %}
+                
+                <p class="mb-2">
+                    <strong>File:</strong> 
+                    <code>{{ template.file_path }}</code>
+                </p>
+                
+                <p class="mb-2">
+                    <strong>Last Updated:</strong> 
+                    <small>{{ template.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                </p>
+                
+                <div class="template-preview">
+                    <strong>Preview:</strong>
+                    <pre class="bg-light p-2 mt-1" style="max-height: 150px; overflow-y: auto; font-size: 0.8em;">{{ template.content[:200] }}{% if template.content|length > 200 %}...{% endif %}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not templates %}
+<div class="text-center py-5">
+    <i class="bi bi-file-earmark-text display-1 text-muted"></i>
+    <h3 class="mt-3 text-muted">No Templates Found</h3>
+    <p class="text-muted">Create your first prompt template to get started.</p>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTemplateModal">
+        <i class="bi bi-plus-circle"></i> Add Template
+    </button>
+</div>
+{% endif %}
+
+<!-- Edit Template Modal -->
+<div class="modal fade" id="editTemplateModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-pencil"></i> Edit Template: <span id="editTemplateName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editTemplateForm">
+                <div class="modal-body">
+                    <input type="hidden" id="editTemplateNameInput" name="name">
+                    
+                    <div class="mb-3">
+                        <label for="editTemplateDescription" class="form-label">Description</label>
+                        <input type="text" class="form-control" id="editTemplateDescription" name="description">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="editTemplateContent" class="form-label">Template Content</label>
+                        <textarea class="form-control" id="editTemplateContent" name="content" rows="20" required></textarea>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Template Variables:</strong>
+                        Use <code>{context}</code> for retrieved document context and <code>{query}</code> for user questions.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Template Modal -->
+<div class="modal fade" id="addTemplateModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-plus-circle"></i> Add New Template
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addTemplateForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="addTemplateName" class="form-label">Template Name</label>
+                        <input type="text" class="form-control" id="addTemplateName" name="name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="addTemplateDescription" class="form-label">Description</label>
+                        <input type="text" class="form-control" id="addTemplateDescription" name="description">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="addTemplateContent" class="form-label">Template Content</label>
+                        <textarea class="form-control" id="addTemplateContent" name="content" rows="20" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> Create Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let templateEditor;
+let addTemplateEditor;
+
+// Initialize CodeMirror editors
+document.addEventListener('DOMContentLoaded', function() {
+    // Edit template editor
+    templateEditor = CodeMirror.fromTextArea(document.getElementById('editTemplateContent'), {
+        lineNumbers: true,
+        theme: 'default',
+        lineWrapping: true,
+        mode: 'text'
+    });
+    
+    // Add template editor
+    addTemplateEditor = CodeMirror.fromTextArea(document.getElementById('addTemplateContent'), {
+        lineNumbers: true,
+        theme: 'default',
+        lineWrapping: true,
+        mode: 'text'
+    });
+    
+    // Set default content for new templates
+    addTemplateEditor.setValue(`You are a helpful assistant designed to help users navigate a complex set of documents. Answer the user's query based on the following context.
+
+## Context Documents
+
+{context}
+
+## User Question
+
+{query}
+
+## Response
+
+Please provide a helpful answer based solely on the context provided above.`);
+});
+
+async function editTemplate(templateName) {
+    try {
+        const response = await fetch(`/api/templates/${templateName}`);
+        const template = await response.json();
+        
+        document.getElementById('editTemplateName').textContent = template.name;
+        document.getElementById('editTemplateNameInput').value = template.name;
+        document.getElementById('editTemplateDescription').value = template.description || '';
+        
+        templateEditor.setValue(template.content);
+        
+        new bootstrap.Modal(document.getElementById('editTemplateModal')).show();
+    } catch (error) {
+        console.error('Error loading template:', error);
+        alert('Error loading template');
+    }
+}
+
+// Handle edit form submission
+document.getElementById('editTemplateForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    formData.set('content', templateEditor.getValue());
+    
+    try {
+        const response = await fetch('/api/templates', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                name: formData.get('name'),
+                content: formData.get('content'),
+                description: formData.get('description')
+            })
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Error saving template');
+        }
+    } catch (error) {
+        console.error('Error saving template:', error);
+        alert('Error saving template');
+    }
+});
+
+// Handle add form submission
+document.getElementById('addTemplateForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    formData.set('content', addTemplateEditor.getValue());
+    
+    try {
+        const response = await fetch('/api/templates', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                name: formData.get('name'),
+                content: formData.get('content'),
+                description: formData.get('description')
+            })
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Error creating template');
+        }
+    } catch (error) {
+        console.error('Error creating template:', error);
+        alert('Error creating template');
+    }
+});
+</script>
+{% endblock %}
