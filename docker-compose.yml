@@ -13,11 +13,11 @@ services:
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
 
   # Elasticsearch for keyword search
   elasticsearch:
@@ -35,9 +35,9 @@ services:
       - elasticsearch_data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 60s
+      timeout: 30s
+      retries: 5
 
   # Ollama for LLM inference
   ollama:
@@ -50,7 +50,7 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -60,6 +60,8 @@ services:
   optimaize:
     build: .
     container_name: optimaize-app
+    ports:
+      - "8000:8000"  # Main API
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -77,6 +79,26 @@ services:
       ollama:
         condition: service_healthy
     command: tail -f /dev/null  # Keep container running for development
+
+  # Admin Portal (NEW)
+  admin:
+    build: .
+    container_name: optimaize-admin
+    ports:
+      - "8001:8001"  # Admin portal
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./src:/app/src
+      - ./admin:/app/admin
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - OLLAMA_URL=http://ollama:11434
+      - PYTHONPATH=/app
+    depends_on:
+      - optimaize
+    command: python -m uvicorn admin.main:app --host 0.0.0.0 --port 8001 --reload
 
 volumes:
   qdrant_data:

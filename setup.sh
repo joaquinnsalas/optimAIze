@@ -26,7 +26,7 @@ echo "✅ Docker and Docker Compose found"
 
 # Create necessary directories
 echo "📁 Creating directories..."
-mkdir -p data/input data/output data/logs
+mkdir -p data/input data/output data/logs admin/static admin/templates
 
 # Start services
 echo "🐳 Starting Docker services..."
@@ -60,6 +60,13 @@ else
     echo "❌ Ollama is not responding"
 fi
 
+# Check Admin Portal
+if curl -sf http://localhost:8001/api/health > /dev/null; then
+    echo "✅ Admin Portal is running"
+else
+    echo "❌ Admin Portal is not responding"
+fi
+
 # Install default LLM model
 echo "🤖 Installing LLM model (llama3)..."
 docker-compose exec -T ollama ollama pull llama3
@@ -67,10 +74,16 @@ docker-compose exec -T ollama ollama pull llama3
 echo ""
 echo "🎉 Setup Complete!"
 echo ""
+echo "Services running:"
+echo "• Main API: http://localhost:8000"
+echo "• Admin Portal: http://localhost:8001"
+echo "• Default admin login: admin@optimaize.com / admin123"
+echo ""
 echo "Next steps:"
 echo "1. Add documents: cp your-documents/* data/input/"
 echo "2. Index documents: docker-compose exec optimaize python main.py index"
 echo "3. Ask questions: docker-compose exec optimaize python main.py ask \"Your question?\""
+echo "4. Manage system: Open http://localhost:8001 in your browser"
 echo ""
 echo "For help: docker-compose exec optimaize python main.py --help"
 echo "To stop: docker-compose down"
