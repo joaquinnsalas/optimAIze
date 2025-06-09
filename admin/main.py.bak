@@ -1,0 +1,432 @@
+"""FastAPI admin portal for OptimAIze."""
+
+import os
+import json
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
+from pathlib import Path
+
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.security import HTTPBearer
+from sqlalchemy.orm import Session
+
+from auth import (
+    authenticate_user, create_access_token, get_current_user, init_admin_user,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
+from models import AdminUser, admin_db
+from crud import AdminCRUD
+from .schemas import (
+    UserLogin, Token, SettingUpdate, TemplateUpdate, TemplateResponse,
+    UsageLogResponse, UsageStatsResponse, DashboardResponse, LogUsageRequest
+)
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="OptimAIze Admin Portal",
+    description="Admin interface for OptimAIze RAG system",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+
+# Setup static files and templates
+static_dir = Path(__file__).parent / "static"
+templates_dir = Path(__file__).parent / "templates"
+
+static_dir.mkdir(exist_ok=True)
+templates_dir.mkdir(exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+templates = Jinja2Templates(directory=str(templates_dir))
+
+# Security
+security = HTTPBearer(auto_error=False)
+
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    """Initialize admin portal on startup."""
+    # Initialize default admin user
+    init_admin_user()
+    
+    # Initialize default settings and templates
+    db = next(admin_db.get_session())
+    try:
+        AdminCRUD.init_default_settings(db)
+        AdminCRUD.init_default_templates(db)
+        print("✅ Admin portal initialized successfully")
+    finally:
+        db.close()
+
+# Helper functions
+def get_current_user_optional(request: Request) -> Optional[AdminUser]:
+    """Get current user if authenticated, otherwise None."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    
+    try:
+        from auth import get_current_user
+        from fastapi.security import HTTPAuthorizationCredentials
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials=auth_header.split(" ")[1]
+        )
+        db = next(admin_db.get_session())
+        user = get_current_user(credentials, db)
+        return user
+    except:
+        return None
+
+def requires_auth(request: Request):
+    """Check if user is authenticated for web pages."""
+    # Check for session token in cookies
+    token = request.cookies.get("access_token")
+    if not token:
+        return False
+    
+    try:
+        from auth import jwt, SECRET_KEY, ALGORITHM
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return True
+    except:
+        return False
+
+# Web Routes (HTML Pages)
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """Dashboard page."""
+    if not requires_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    
+    db = next(admin_db.get_session())
+    try:
+        # Get statistics and recent logs
+        stats = AdminCRUD.get_usage_stats(db)
+        recent_logs = AdminCRUD.get_usage_logs(db, limit=10)
+        settings = AdminCRUD.get_all_settings(db)
+        
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "stats": stats,
+            "recent_logs": recent_logs,
+            "settings": settings
+        })
+    finally:
+        db.close()
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Login page."""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login")
+async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    """Handle login form submission."""
+    db = next(admin_db.get_session())
+    try:
+        user = authenticate_user(db, email, password)
+        if not user:
+            return templates.TemplateResponse("login.html", {
+                "request": request,
+                "error": "Invalid email or password"
+            })
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        
+        # Redirect to dashboard with token in cookie
+        response = RedirectResponse(url="/", status_code=302)
+        response.set_cookie(
+            key="access_token", 
+            value=access_token,
+            expires=int(access_token_expires.total_seconds()),
+            httponly=True,
+            secure=False  # Set to True in production with HTTPS
+        )
+        return response
+    finally:
+        db.close()
+
+@app.get("/logout")
+async def logout():
+    """Logout and clear session."""
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("access_token")
+    return response
+
+@app.get("/templates", response_class=HTMLResponse)
+async def templates_page(request: Request):
+    """Templates management page."""
+    if not requires_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    
+    db = next(admin_db.get_session())
+    try:
+        templates_list = AdminCRUD.get_all_templates(db)
+        return templates.TemplateResponse("templates.html", {
+            "request": request,
+            "templates": templates_list
+        })
+    finally:
+        db.close()
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    """Settings management page."""
+    if not requires_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+    
+    db = next(admin_db.get_session())
+    try:
+        settings = AdminCRUD.get_all_settings(db)
+        return templates.TemplateResponse("settings.html", {
+            "request": request,
+            "settings": settings
+        })
+    finally:
+        db.close()
+
+# API Routes (JSON)
+@app.post("/api/auth/login", response_model=Token)
+async def api_login(user_login: UserLogin):
+    """API login endpoint."""
+    db = next(admin_db.get_session())
+    try:
+        user = authenticate_user(db, user_login.email, user_login.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    finally:
+        db.close()
+
+@app.get("/api/dashboard", response_model=DashboardResponse)
+async def api_dashboard(
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Get dashboard data."""
+    stats = AdminCRUD.get_usage_stats(db)
+    recent_logs = AdminCRUD.get_usage_logs(db, limit=10)
+    settings = AdminCRUD.get_all_settings(db)
+    
+    return DashboardResponse(
+        stats=UsageStatsResponse(**stats),
+        recent_logs=[UsageLogResponse.from_orm(log) for log in recent_logs],
+        settings=settings
+    )
+
+@app.get("/api/settings")
+async def api_get_settings(
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Get all settings."""
+    return AdminCRUD.get_all_settings(db)
+
+@app.put("/api/settings")
+async def api_update_setting(
+    setting: SettingUpdate,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Update a single setting."""
+    AdminCRUD.set_setting(db, setting.key, setting.value, setting.description)
+    return {"message": "Setting updated successfully"}
+
+@app.put("/api/settings/bulk")
+async def api_update_settings_bulk(
+    settings: Dict[str, Any],
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Update multiple settings at once."""
+    for key, value in settings.items():
+        AdminCRUD.set_setting(db, key, value)
+    return {"message": f"Updated {len(settings)} settings successfully"}
+
+@app.get("/api/templates", response_model=List[TemplateResponse])
+async def api_get_templates(
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Get all templates."""
+    templates = AdminCRUD.get_all_templates(db)
+    return [TemplateResponse.from_orm(template) for template in templates]
+
+@app.get("/api/templates/{template_name}", response_model=TemplateResponse)
+async def api_get_template(
+    template_name: str,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Get specific template."""
+    template = AdminCRUD.get_template(db, template_name)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return TemplateResponse.from_orm(template)
+
+@app.post("/api/templates", response_model=TemplateResponse)
+async def api_create_template(
+    template: TemplateUpdate,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Create new template."""
+    # Generate file path
+    file_path = f"src/llm/templates/{template.name}.txt"
+    
+    saved_template = AdminCRUD.save_template(
+        db, template.name, file_path, template.content, template.description
+    )
+    return TemplateResponse.from_orm(saved_template)
+
+@app.put("/api/templates", response_model=TemplateResponse)
+async def api_update_template(
+    template: TemplateUpdate,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Update existing template."""
+    existing = AdminCRUD.get_template(db, template.name)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    saved_template = AdminCRUD.save_template(
+        db, template.name, existing.file_path, template.content, template.description
+    )
+    return TemplateResponse.from_orm(saved_template)
+
+@app.post("/api/usage-log")
+async def api_log_usage(
+    log_request: LogUsageRequest,
+    db: Session = Depends(admin_db.get_session)
+):
+    """Log usage from main API (no auth required for internal calls)."""
+    AdminCRUD.log_usage(
+        db=db,
+        prompt=log_request.prompt,
+        response=log_request.response,
+        model_name=log_request.model_name,
+        tokens_used=log_request.tokens_used,
+        embedding_latency_ms=log_request.embedding_latency_ms,
+        generation_latency_ms=log_request.generation_latency_ms,
+        total_latency_ms=log_request.total_latency_ms,
+        user=log_request.user,
+        search_mode=log_request.search_mode,
+        chunks_retrieved=log_request.chunks_retrieved
+    )
+    return {"message": "Usage logged successfully"}
+
+@app.get("/api/usage-logs", response_model=List[UsageLogResponse])
+async def api_get_usage_logs(
+    limit: int = 100,
+    days_back: int = 90,
+    user: Optional[str] = None,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Get usage logs with filtering."""
+    logs = AdminCRUD.get_usage_logs(db, limit, days_back, user)
+    return [UsageLogResponse.from_orm(log) for log in logs]
+
+@app.get("/api/usage-stats", response_model=UsageStatsResponse)
+async def api_get_usage_stats(
+    days_back: int = 30,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Get usage statistics."""
+    stats = AdminCRUD.get_usage_stats(db, days_back)
+    return UsageStatsResponse(**stats)
+
+@app.get("/api/health")
+async def api_health_check():
+    """System health check."""
+    import httpx
+    import asyncio
+    
+    async def check_service(url: str, timeout: int = 5) -> Dict[str, Any]:
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(url)
+                return {
+                    "healthy": response.status_code == 200,
+                    "status_code": response.status_code,
+                    "response_time_ms": response.elapsed.total_seconds() * 1000
+                }
+        except Exception as e:
+            return {
+                "healthy": False,
+                "error": str(e)
+            }
+    
+    # Check all services
+    services = await asyncio.gather(
+        check_service("http://localhost:6333/health"),  # Qdrant
+        check_service("http://localhost:9200/_cluster/health"),  # Elasticsearch  
+        check_service("http://localhost:11434/api/tags"),  # Ollama
+        return_exceptions=True
+    )
+    
+    qdrant_health, es_health, ollama_health = services
+    
+    # Determine overall health
+    all_healthy = all([
+        qdrant_health.get("healthy", False) if isinstance(qdrant_health, dict) else False,
+        es_health.get("healthy", False) if isinstance(es_health, dict) else False,
+        ollama_health.get("healthy", False) if isinstance(ollama_health, dict) else False,
+    ])
+    
+    return {
+        "overall": "healthy" if all_healthy else "degraded",
+        "qdrant": qdrant_health if isinstance(qdrant_health, dict) else {"healthy": False, "error": str(qdrant_health)},
+        "elasticsearch": es_health if isinstance(es_health, dict) else {"healthy": False, "error": str(es_health)},
+        "ollama": ollama_health if isinstance(ollama_health, dict) else {"healthy": False, "error": str(ollama_health)},
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+@app.delete("/api/usage-logs/cleanup")
+async def api_cleanup_logs(
+    days_to_keep: int = 90,
+    current_user: AdminUser = Depends(get_current_user),
+    db: Session = Depends(admin_db.get_session)
+):
+    """Clean up old usage logs."""
+    deleted_count = AdminCRUD.cleanup_old_logs(db, days_to_keep)
+    return {"message": f"Deleted {deleted_count} old log entries"}
+
+# Error handlers
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    """Handle 404 errors for web pages."""
+    if request.url.path.startswith("/api/"):
+        return {"detail": "Not found"}
+    return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
+
+# Development server
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "admin.main:app",
+        host="0.0.0.0",
+        port=8001,
+        reload=True,
+        log_level="info"
+    )

@@ -1,7 +1,55 @@
 version: '3.8'
-
 services:
-  # Qdrant vector database
+  # Main OptimAIze Application
+  optimaize-app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: optimaize-app
+    command: ["python", "main.py", "serve"]
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - OLLAMA_URL=http://ollama:11434
+      - EMBEDDING_DEVICE=cpu
+      - LLM_MODEL=llama3
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+    depends_on:
+      - qdrant
+      - elasticsearch
+      - ollama
+    networks:
+      - optimaize-network
+    restart: unless-stopped
+  # Admin Portal
+  optimaize-admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: optimaize-admin
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8001:8000"  # Admin on different port
+    environment:
+      - DATABASE_URL=sqlite:///app/data/optimaize.db
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - ./data:/app/data  # Shared data directory
+      - ./admin/templates:/app/templates
+      - ./logs:/app/logs
+    depends_on:
+      - optimaize-app
+    networks:
+      - optimaize-network
+    restart: unless-stopped
+  # Qdrant Vector Database
   qdrant:
     image: qdrant/qdrant:v1.7.4
     container_name: optimaize-qdrant
@@ -9,98 +57,59 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-      - QDRANT__SERVICE__GRPC_PORT=6334
-#    healthcheck:
-#      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 3
-
-  # Elasticsearch for keyword search
+      - ./qdrant_storage:/qdrant/storage:z
+    networks:
+      - optimaize-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  # Elasticsearch for Keyword Search
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: optimaize-elasticsearch
     environment:
       - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
       - xpack.security.enabled=false
-      - xpack.security.enrollment.enabled=false
+      - xpack.ml.enabled=false
     ports:
       - "9200:9200"
       - "9300:9300"
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+      - ./elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - optimaize-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
-      interval: 60s
-      timeout: 30s
-      retries: 5
-
-  # Ollama for LLM inference
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  # Ollama LLM Service
   ollama:
     image: ollama/ollama:latest
     container_name: optimaize-ollama
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ./ollama_data:/root/.ollama
     environment:
       - OLLAMA_HOST=0.0.0.0
+    networks:
+      - optimaize-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:11434/api/tags"]
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-
-  # OptimAIze application
-  optimaize:
-    build: .
-    container_name: optimaize-app
-    ports:
-      - "8000:8000"  # Main API
-    volumes:
-      - ./data:/app/data
-      - ./config:/app/config
-      - ./src:/app/src
-    environment:
-      - QDRANT_URL=http://qdrant:6333
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - OLLAMA_URL=http://ollama:11434
-      - PYTHONPATH=/app
-    depends_on:
-      qdrant:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-    command: tail -f /dev/null  # Keep container running for development
-
-  # Admin Portal (NEW)
-  admin:
-    build: .
-    container_name: optimaize-admin
-    ports:
-      - "8001:8001"  # Admin portal
-    volumes:
-      - ./data:/app/data
-      - ./config:/app/config
-      - ./src:/app/src
-      - ./admin:/app/admin
-    environment:
-      - QDRANT_URL=http://qdrant:6333
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - OLLAMA_URL=http://ollama:11434
-      - PYTHONPATH=/app
-    depends_on:
-      - optimaize
-    command: python -m uvicorn admin.main:app --host 0.0.0.0 --port 8001 --reload
-
+networks:
+  optimaize-network:
+    driver: bridge
 volumes:
-  qdrant_data:
+  qdrant_storage:
   elasticsearch_data:
   ollama_data:

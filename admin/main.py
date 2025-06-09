@@ -13,13 +13,13 @@ from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 
-from .auth import (
+from auth import (
     authenticate_user, create_access_token, get_current_user, init_admin_user,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
-from .models import AdminUser, admin_db
-from .crud import AdminCRUD
-from .schemas import (
+from models import AdminUser, admin_db
+from crud import AdminCRUD
+from schemas import (
     UserLogin, Token, SettingUpdate, TemplateUpdate, TemplateResponse,
     UsageLogResponse, UsageStatsResponse, DashboardResponse, LogUsageRequest
 )
@@ -70,7 +70,7 @@ def get_current_user_optional(request: Request) -> Optional[AdminUser]:
         return None
     
     try:
-        from .auth import get_current_user
+        from auth import get_current_user
         from fastapi.security import HTTPAuthorizationCredentials
         credentials = HTTPAuthorizationCredentials(
             scheme="Bearer",
@@ -90,7 +90,7 @@ def requires_auth(request: Request):
         return False
     
     try:
-        from .auth import jwt, SECRET_KEY, ALGORITHM
+        from auth import jwt, SECRET_KEY, ALGORITHM
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return True
     except:

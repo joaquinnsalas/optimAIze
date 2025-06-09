@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from .models import AdminSettings, UsageLog, TemplateFile
+from models import AdminSettings, UsageLog, TemplateFile
 
 class AdminCRUD:
     """Admin database operations."""
