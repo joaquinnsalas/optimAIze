@@ -1,0 +1,89 @@
+# azure-webapp.yml - Azure Web App deployment configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: optimaize-config
+data:
+  # Azure Web App startup command
+  startup-command: |
+    #!/bin/bash
+    
+    # Set environment for Azure
+    export ENVIRONMENT=azure
+    export PYTHONPATH=/home/site/wwwroot:$PYTHONPATH
+    export PORT=${PORT:-8000}
+    export HOST=0.0.0.0
+    
+    # Install system dependencies if needed
+    apt-get update && apt-get install -y curl build-essential || true
+    
+    # Run setup
+    chmod +x /home/site/wwwroot/startup.sh
+    /home/site/wwwroot/startup.sh setup
+    
+    # Start the application
+    /home/site/wwwroot/startup.sh start
+
+---
+# Environment Variables for Azure Web App
+environment:
+  # Required for Azure Web Apps
+  SCM_DO_BUILD_DURING_DEPLOYMENT: "true"
+  ENABLE_ORYX_BUILD: "true"
+  
+  # Python configuration
+  PYTHON_VERSION: "3.11"
+  PYTHONPATH: "/home/site/wwwroot"
+  
+  # Application settings
+  ENVIRONMENT: "azure"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  
+  # External services (to be configured)
+  QDRANT_URL: "https://your-qdrant-instance.com"
+  ELASTICSEARCH_URL: "https://your-elasticsearch-instance.com"
+  OLLAMA_URL: "https://your-ollama-instance.com"
+  
+  # Optional: Azure AI Services
+  AZURE_OPENAI_ENDPOINT: ""
+  AZURE_OPENAI_API_KEY: ""
+  AZURE_SEARCH_ENDPOINT: ""
+  AZURE_SEARCH_API_KEY: ""
+  
+  # Security
+  JWT_SECRET: "your-jwt-secret-key"
+  ADMIN_USERNAME: "admin"
+  ADMIN_PASSWORD: "change-this-password"
+
+---
+# requirements-azure.txt - Additional Azure dependencies
+# This extends your existing requirements.txt
+azure-identity>=1.15.0
+azure-storage-blob>=12.19.0
+azure-keyvault-secrets>=4.7.0
+azure-ai-textanalytics>=5.3.0
+azure-search-documents>=11.4.0
+gunicorn>=21.2.0
+
+---
+# web.config - IIS configuration for Azure Web Apps
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <handlers>
+      <add name="PythonHandler" path="*" verb="*" modules="httpPlatformHandler" resourceType="Unspecified"/>
+    </handlers>
+    <httpPlatform processPath="D:\home\python\python.exe"
+                  arguments="api_server.py"
+                  stdoutLogEnabled="true"
+                  stdoutLogFile="D:\home\LogFiles\python.log"
+                  startupTimeLimit="60"
+                  requestTimeout="00:04:00">
+      <environmentVariables>
+        <environmentVariable name="PYTHONPATH" value="D:\home\site\wwwroot"/>
+        <environmentVariable name="PORT" value="%HTTP_PLATFORM_PORT%"/>
+      </environmentVariables>
+    </httpPlatform>
+  </system.webServer>
+</configuration>

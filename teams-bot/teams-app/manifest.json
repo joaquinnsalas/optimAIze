@@ -1,0 +1,97 @@
+{
+    "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+    "manifestVersion": "1.16",
+    "version": "1.0.0",
+    "id": "{{BOT_ID}}",
+    "packageName": "com.altura.optimaize.teamsbot",
+    "developer": {
+      "name": "Altura Engineering",
+      "websiteUrl": "https://www.alturaengineering.com",
+      "privacyUrl": "https://www.alturaengineering.com/privacy",
+      "termsOfUseUrl": "https://www.alturaengineering.com/terms"
+    },
+    "icons": {
+      "color": "color.png",
+      "outline": "outline.png"
+    },
+    "name": {
+      "short": "OptimAIze Assistant",
+      "full": "OptimAIze AI Document Assistant for Altura Engineering"
+    },
+    "description": {
+      "short": "AI-powered document search and question answering for Altura Engineering",
+      "full": "OptimAIze is an intelligent assistant that helps Altura Engineering employees quickly find information from company documents, policies, procedures, and technical specifications using advanced AI search capabilities."
+    },
+    "accentColor": "#0078D4",
+    "bots": [
+      {
+        "botId": "{{BOT_ID}}",
+        "scopes": [
+          "personal",
+          "team",
+          "groupchat"
+        ],
+        "supportsFiles": false,
+        "isNotificationOnly": false,
+        "supportsCalling": false,
+        "supportsVideo": false,
+        "commandLists": [
+          {
+            "scopes": [
+              "personal",
+              "team",
+              "groupchat"
+            ],
+            "commands": [
+              {
+                "title": "Help",
+                "description": "Get help and usage instructions for OptimAIze"
+              },
+              {
+                "title": "Status",
+                "description": "Check the current system status and your access level"
+              },
+              {
+                "title": "Ask about policies",
+                "description": "Example: What is our vacation policy?"
+              },
+              {
+                "title": "Search procedures",
+                "description": "Example: How do we handle safety protocols?"
+              },
+              {
+                "title": "Find specifications",
+                "description": "Example: What are the requirements for project X?"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "permissions": [
+      "identity",
+      "messageTeamMembers"
+    ],
+    "validDomains": [
+      "{{BOT_DOMAIN}}",
+      "alturaengineering.com"
+    ],
+    "webApplicationInfo": {
+      "id": "{{BOT_ID}}",
+      "resource": "https://RscBasedStoreApp"
+    },
+    "authorization": {
+      "permissions": {
+        "resourceSpecific": [
+          {
+            "name": "ChannelMessage.Read.Group",
+            "type": "Application"
+          },
+          {
+            "name": "TeamMember.Read.Group",
+            "type": "Application"
+          }
+        ]
+      }
+    }
+  }
