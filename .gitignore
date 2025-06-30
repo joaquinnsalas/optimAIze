@@ -229,3 +229,10 @@ Thumbs.db
 .env.local
 .env.development
 local_config/
+
+# === OptimAIze Specific Data ===
+elasticsearch_data/
+ollama_data/
+qdrant_storage/
+logs/
+data/
