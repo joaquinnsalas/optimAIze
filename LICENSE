@@ -1,0 +1,70 @@
+PROPRIETARY SOFTWARE LICENSE
+
+OptimAIze - Enterprise RAG System
+Copyright (c) 2025 Joaquin Salas and Emilio Salas. All rights reserved.
+
+NOTICE: This software and its associated documentation files (the "Software") 
+are the proprietary and confidential information of Joaquin Salas and Emilio Salas 
+(the "Owners"). The Software is protected by copyright laws and international 
+copyright treaties, as well as other intellectual property laws and treaties.
+
+RESTRICTIONS:
+
+1. NO REPRODUCTION: You may not copy, reproduce, distribute, transmit, display, 
+   perform, publish, license, modify, create derivative works from, transfer, 
+   or sell any information, software, products, or services obtained from this 
+   Software without explicit written permission from the Owners.
+
+2. NO REVERSE ENGINEERING: You may not reverse engineer, decompile, disassemble, 
+   or otherwise attempt to derive the source code, underlying ideas, algorithms, 
+   structure, or organization of the Software.
+
+3. NO COMMERCIAL USE: You may not use this Software for any commercial purposes, 
+   including but not limited to selling, licensing, or providing services based 
+   on this Software, without explicit written authorization from the Owners.
+
+4. NO REDISTRIBUTION: You may not distribute, sublicense, or make the Software 
+   available to any third party without explicit written permission from the Owners.
+
+5. VIEWING ONLY: This code is made available for viewing and evaluation purposes 
+   only. Any use beyond viewing requires explicit written permission from the Owners.
+
+LIMITED PERMISSIONS:
+
+Subject to the restrictions above, you may:
+- View the source code for educational and evaluation purposes only
+- Fork the repository for personal, non-commercial evaluation only
+- Submit issues and feature requests through official channels
+
+TERMINATION:
+
+This license is effective until terminated. Your rights under this license will 
+terminate automatically without notice if you fail to comply with any term(s) 
+of this license. Upon termination, you must cease all use of the Software and 
+destroy all copies, full or partial, of the Software.
+
+DISCLAIMER:
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+OWNERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN 
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION 
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+CONTACT:
+
+For licensing inquiries, commercial use requests, or permission requests, 
+please contact:
+
+Joaquin Salas and Emilio Salas
+Email: [your-business-email@domain.com]
+Project: OptimAIze Enterprise RAG System
+
+This license may be updated at any time without notice. The most current 
+version will always be available in this repository.
+
+---
+
+© 2025 Joaquin Salas and Emilio Salas. All rights reserved.
+OptimAIze is a trademark of Joaquin Salas and Emilio Salas.
